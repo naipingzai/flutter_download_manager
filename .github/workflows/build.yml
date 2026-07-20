@@ -19,12 +19,19 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.44.x'
           channel: 'stable'
 
-      - name: Install dependencies
+      - name: Install Python dependencies
+        run: pip install -r python/requirements.txt
+
+      - name: Install Flutter dependencies
         run: flutter pub get
 
       - name: Analyze
@@ -45,12 +52,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.44.x'
           channel: 'stable'
 
-      - name: Install dependencies
+      - name: Install Python dependencies
+        run: pip install -r python/requirements.txt
+
+      - name: Install Flutter dependencies
         run: flutter pub get
 
       - name: Build iOS (no codesign)

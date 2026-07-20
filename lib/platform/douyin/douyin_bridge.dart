@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'package:uuid/uuid.dart';
 import '../../model/download_task.dart';
 import '../../service/download_task_manager.dart';
@@ -33,12 +34,48 @@ class DouyinBridge {
       final result = jsonDecode(resultStr) as Map<String, dynamic>;
       final success = result['success'] == true;
       final title = result['title']?.toString() ?? link;
+      final filePath = result['path']?.toString() ?? '';
+
+      // 计算文件大小
+      int fileSize = 0;
+      if (filePath.isNotEmpty) {
+        try {
+          final file = File(filePath);
+          if (await file.exists()) {
+            fileSize = await file.length();
+          }
+        } catch (_) {}
+      }
+
+      // 如果 Python 没返回路径，扫描下载目录找最新文件
+      String actualPath = filePath;
+      int actualSize = fileSize;
+      if (actualPath.isEmpty || actualSize == 0) {
+        try {
+          final dir = Directory(savePath);
+          if (await dir.exists()) {
+            final files = await dir.list().where((e) => e is File).toList();
+            if (files.isNotEmpty) {
+              files.sort((a, b) =>
+                  b.statSync().modified.compareTo(a.statSync().modified));
+              actualPath = files.first.path;
+              actualSize = files.first.statSync().size;
+            }
+          }
+        } catch (_) {}
+      }
 
       if (success) {
         await _taskManager.updateTask(
-          task.copyWith(title: title, status: TaskStatus.completed),
+          task.copyWith(
+            title: title,
+            status: TaskStatus.completed,
+            filePath: actualPath,
+            downloadedSize: actualSize,
+            totalSize: actualSize,
+          ),
         );
-        return {'success': true, 'title': title};
+        return {'success': true, 'title': title, 'path': actualPath};
       } else {
         await _taskManager.updateTask(
           task.copyWith(
@@ -441,6 +478,7 @@ class DouyinBridge {
   }
 
   static void setCookie(String cookie) {
+    _python.saveCookie('douyin', cookie);
     _python.callDyBridge('set_cookie', jsonEncode([cookie]));
   }
 

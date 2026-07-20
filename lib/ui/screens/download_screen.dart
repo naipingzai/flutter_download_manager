@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../platform/douyin/douyin_bridge.dart';
@@ -98,7 +99,11 @@ class _DownloadScreenState extends State<DownloadScreen> {
   }
 
   Future<void> _parseAndDownload(String url) async {
-    final savePath = '/tmp/downloads/${widget.platformId}';
+    // 使用用户可见的下载目录
+    final home = Platform.environment['HOME'] ?? '/tmp';
+    final savePath =
+        '$home/Downloads/${widget.platformId == 'xhs' ? 'XhsDownload' : 'DyDownload'}';
+    await Directory(savePath).create(recursive: true);
     Map<String, dynamic> result;
     if (widget.platformId == 'xhs') {
       result = await XhsBridge.parseAndDownload(url, savePath);
@@ -106,7 +111,8 @@ class _DownloadScreenState extends State<DownloadScreen> {
       result = await DouyinBridge.parseAndDownload(url, savePath);
     }
     if (result['success'] == true) {
-      _showSnackBar('下载成功', result['title'] ?? '');
+      final path = result['path'] ?? savePath;
+      _showSnackBar('下载成功', '${result['title'] ?? ''}\n保存到: $path');
     } else {
       _showSnackBar('下载失败', result['message'] ?? '未知错误');
     }

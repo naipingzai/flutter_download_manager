@@ -2,6 +2,8 @@
 """
 Python Runner - 通过命令行调用 dy_bridge / xhs_bridge 的函数
 用法: python3 runner.py <module_name> <function_name> [args_json]
+
+在调用前自动加载 cookie 配置文件，解决 Process.run 每次新建进程导致 cookie 丢失的问题。
 """
 import sys
 import json
@@ -12,6 +14,35 @@ script_dir = os.path.dirname(os.path.abspath(__file__))
 if script_dir not in sys.path:
     sys.path.insert(0, script_dir)
 
+CONFIG_FILE = os.path.join(script_dir, '.cookie_config.json')
+
+def load_cookie_config():
+    """从配置文件加载 cookie 设置"""
+    if not os.path.exists(CONFIG_FILE):
+        return
+    try:
+        with open(CONFIG_FILE, 'r') as f:
+            config = json.load(f)
+        
+        dy_cookie = config.get('douyin_cookie', '')
+        xhs_cookie = config.get('xhs_cookie', '')
+        
+        if dy_cookie:
+            try:
+                import dy_bridge
+                dy_bridge.set_cookie(dy_cookie)
+            except Exception:
+                pass
+        
+        if xhs_cookie:
+            try:
+                import xhs_bridge
+                xhs_bridge.set_cookie(xhs_cookie)
+            except Exception:
+                pass
+    except Exception:
+        pass
+
 def main():
     if len(sys.argv) < 3:
         print(json.dumps({"success": False, "message": "Usage: runner.py <module> <function> [args_json]"}))
@@ -20,6 +51,9 @@ def main():
     module_name = sys.argv[1]
     function_name = sys.argv[2]
     args_json = sys.argv[3] if len(sys.argv) > 3 else "[]"
+
+    # 加载保存的 cookie
+    load_cookie_config()
 
     try:
         # 动态导入模块
