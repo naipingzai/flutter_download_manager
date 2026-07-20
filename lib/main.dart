@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'dart:io';
 import 'framework/plugin_registry.dart';
+import 'service/python_runner.dart';
 import 'platform/douyin/douyin_plugin.dart';
 import 'platform/xhs/xhs_plugin.dart';
 import 'service/download_task_manager.dart';
@@ -24,6 +25,9 @@ void main() async {
 
   final taskManager = DownloadTaskManager();
   await taskManager.init();
+
+  // 初始化 Python Runner
+  await PythonRunner.instance.init();
 
   runApp(
     ChangeNotifierProvider.value(
