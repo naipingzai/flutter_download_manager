@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-
 import '../../service/cookie_store.dart';
 
 /// 设置页面 - 完全复刻原项目 ProfileScreen
@@ -17,7 +16,7 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   String _cookieStatus = '未设置';
-  String _versionName = '1.0.0';
+  final String _versionName = '1.0.0';
 
   String get _platformName => widget.platform == 'xhs' ? '小红书' : '抖音';
 
@@ -40,10 +39,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (mounted) {
       setState(() {
         if (activeCookie != null && activeCookie.isNotEmpty) {
-          final keyCount = activeCookie
-              .split(';')
-              .where((s) => s.contains('='))
-              .length;
+          final keyCount =
+              activeCookie.split(';').where((s) => s.contains('=')).length;
           _cookieStatus = '使用: ${store.getActiveName()} ($keyCount 个字段)';
         } else {
           _cookieStatus = '未设置';
@@ -93,10 +90,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
         children: [
           // ── 平台设置标题 ──
           Text(
-            '${_platformName}设置',
+            '$_platformName设置',
             style: Theme.of(context).textTheme.titleSmall?.copyWith(
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-            ),
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
           ),
           const SizedBox(height: 8),
 
@@ -113,8 +110,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
           Text(
             '关于',
             style: Theme.of(context).textTheme.titleSmall?.copyWith(
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-            ),
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
           ),
           const SizedBox(height: 8),
 
@@ -143,12 +140,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           ),
                           Text(
                             '聚合多平台内容下载工具',
-                            style: Theme.of(context).textTheme.bodySmall
-                                ?.copyWith(
-                                  color: Theme.of(
-                                    context,
-                                  ).colorScheme.onSurfaceVariant,
-                                ),
+                            style:
+                                Theme.of(context).textTheme.bodySmall?.copyWith(
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.onSurfaceVariant,
+                                    ),
                           ),
                         ],
                       ),
@@ -156,8 +153,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     Text(
                       'v$_versionName',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
+                            color:
+                                Theme.of(context).colorScheme.onSurfaceVariant,
+                          ),
                     ),
                   ],
                 ),
@@ -201,8 +199,9 @@ class _SettingsRow extends StatelessWidget {
                     Text(
                       subtitle,
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
+                            color:
+                                Theme.of(context).colorScheme.onSurfaceVariant,
+                          ),
                     ),
                   ],
                 ),

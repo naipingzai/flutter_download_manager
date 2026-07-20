@@ -74,12 +74,12 @@ class _DownloadScreenState extends State<DownloadScreen> {
   void _requireLink(void Function(String url) block) async {
     final url = _extractLink();
     if (url.isEmpty) {
-      _showSnackBar(widget.platformName + '下载', '请先输入链接');
+      _showSnackBar('${widget.platformName}下载', '请先输入链接');
       return;
     }
     if (!await _syncCookie()) {
       _showSnackBar(
-        widget.platformName + '下载',
+        '${widget.platformName}下载',
         '请先在设置中配置${widget.platformName}Cookie',
       );
       return;
@@ -126,12 +126,6 @@ class _DownloadScreenState extends State<DownloadScreen> {
   }
 
   Future<void> _batchDownloadAccount(String url) async {
-    String jsonStr;
-    if (widget.platformId == 'xhs') {
-      jsonStr = await XhsBridge.detectLinkInfo(url);
-    } else {
-      jsonStr = await DouyinBridge.detectLinkInfo(url);
-    }
     _showSnackBar('批量下载账号', '功能执行中...');
   }
 
@@ -236,8 +230,8 @@ class _DownloadScreenState extends State<DownloadScreen> {
           Text(
             '工具箱',
             style: Theme.of(context).textTheme.titleSmall?.copyWith(
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-            ),
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
           ),
           const SizedBox(height: 8),
 
@@ -325,8 +319,8 @@ class _ToolCard extends StatelessWidget {
               Text(
                 desc,
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
               ),
             ],
           ),
