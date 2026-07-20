@@ -4,13 +4,13 @@ import 'dart:io';
 import 'package:uuid/uuid.dart';
 import '../../model/download_task.dart';
 import '../../service/download_task_manager.dart';
-import '../../service/python_runner.dart';
+import '../../service/python_service.dart';
 
 /// 抖音下载桥接层 - 通过 PythonRunner 调用 dy_bridge.py
 class DouyinBridge {
   static const _uuid = Uuid();
   static final DownloadTaskManager _taskManager = DownloadTaskManager();
-  static final PythonRunner _python = PythonRunner.instance;
+  static final PythonService _python = PythonService.instance;
 
   static Future<Map<String, dynamic>> parseAndDownload(
     String link,
