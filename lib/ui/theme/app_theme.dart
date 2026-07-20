@@ -4,8 +4,7 @@ import 'package:flutter/material.dart';
 /// Material 3 动态取色主题
 class AppTheme {
   static ThemeData lightTheme(ColorScheme? colorScheme) {
-    final scheme =
-        colorScheme ??
+    final scheme = colorScheme ??
         ColorScheme.fromSeed(
           seedColor: const Color(0xFF6750A4),
           brightness: Brightness.light,
@@ -37,8 +36,7 @@ class AppTheme {
   }
 
   static ThemeData darkTheme(ColorScheme? colorScheme) {
-    final scheme =
-        colorScheme ??
+    final scheme = colorScheme ??
         ColorScheme.fromSeed(
           seedColor: const Color(0xFF6750A4),
           brightness: Brightness.dark,
