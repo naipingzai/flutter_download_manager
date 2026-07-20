@@ -37,10 +37,16 @@ app.*.symbols
 # Obfuscation related
 app.*.map.json
 
-# Android Studio will place build artifacts here
+# Android build
 /android/app/debug
 /android/app/profile
 /android/app/release
+/android/.gradle/
+/android/captures/
+/android/gradlew
+/android/gradlew.bat
+/android/local.properties
+**/android/**/GeneratedPluginRegistrant.java
 
 # iOS
 **/ios/Pods/
@@ -60,28 +66,11 @@ app.*.map.json
 **/ios/**/*.perspectivev3
 **/xcuserdata
 
-# macOS
-**/macos/Flutter/GeneratedPluginRegistrant.swift
-**/macos/Flutter/ephemeral/
-**/xcuserdata
-
 # Linux
 **/linux/flutter/ephemeral/
 **/linux/flutter/generated_plugins.cmake
 
-# Windows
-**/windows/flutter/ephemeral/
-**/windows/flutter/generated_plugins.cmake
-
-# Web
-**/web/favicon.png
-**/web/icons/Icon-192.png
-**/web/icons/Icon-512.png
-**/web/icons/Icon-maskable-192.png
-**/web/icons/Icon-maskable-512.png
-**/web/manifest.json
-
-# C++ build
+# C++ build artifacts
 src/build/
 *.so
 *.dylib
@@ -92,6 +81,12 @@ src/build/
 # Python
 python/__pycache__/
 *.pyo
+*.pyd
 
 # Build output
 build/
+
+# macOS, Windows, Web (not targeting these)
+/macos/
+/windows/
+/web/
