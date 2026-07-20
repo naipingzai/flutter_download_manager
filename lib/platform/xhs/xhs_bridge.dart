@@ -26,7 +26,7 @@ class XhsBridge {
     await _taskManager.addTask(task);
 
     try {
-      final resultStr = await _python.callXhsBridge(
+      final resultStr = _python.callXhsBridge(
         'parse_link',
         jsonEncode([link, savePath, taskId]),
       );
@@ -76,7 +76,7 @@ class XhsBridge {
             ),
       );
 
-      final resultStr = await _python.callXhsBridge(
+      final resultStr = _python.callXhsBridge(
         'parse_link',
         jsonEncode([link, savePath, taskId]),
       );
@@ -106,7 +106,7 @@ class XhsBridge {
   }
 
   static Future<String> detectLinkInfo(String link) async {
-    return await _python.callXhsBridge(
+    return _python.callXhsBridge(
       'detect_link_info',
       jsonEncode([link]),
     );
@@ -128,7 +128,7 @@ class XhsBridge {
     await _taskManager.addTask(task);
 
     try {
-      final resultStr = await _python.callXhsBridge(
+      final resultStr = _python.callXhsBridge(
         'batch_download_user',
         jsonEncode([userId, nickname, savePath, taskId]),
       );
@@ -168,7 +168,7 @@ class XhsBridge {
     await _taskManager.addTask(task);
 
     try {
-      final resultStr = await _python.callXhsBridge(
+      final resultStr = _python.callXhsBridge(
         'batch_download_collection',
         jsonEncode([collectionId, collectionName, savePath, taskId]),
       );

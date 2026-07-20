@@ -27,7 +27,7 @@ class DouyinBridge {
     await _taskManager.addTask(task);
 
     try {
-      final resultStr = await _python.callDyBridge(
+      final resultStr = _python.callDyBridge(
         'parse_link',
         jsonEncode([link, savePath, taskId]),
       );
@@ -113,7 +113,7 @@ class DouyinBridge {
             ),
       );
 
-      final resultStr = await _python.callDyBridge(
+      final resultStr = _python.callDyBridge(
         'parse_link',
         jsonEncode([link, savePath, taskId]),
       );
@@ -143,7 +143,7 @@ class DouyinBridge {
   }
 
   static Future<String> listCollectFolders() async {
-    return await _python.callDyBridge('list_collect_folders', '[]');
+    return _python.callDyBridge('list_collect_folders', '[]');
   }
 
   static Future<Map<String, dynamic>> batchDownloadCollect(
@@ -162,7 +162,7 @@ class DouyinBridge {
     await _taskManager.addTask(task);
 
     try {
-      final resultStr = await _python.callDyBridge(
+      final resultStr = _python.callDyBridge(
         'batch_download_collect',
         jsonEncode([collectId, collectName, savePath, taskId]),
       );
@@ -187,7 +187,7 @@ class DouyinBridge {
   }
 
   static Future<String> detectLinkInfo(String link) async {
-    return await _python.callDyBridge(
+    return _python.callDyBridge(
       'detect_link_info',
       jsonEncode([link]),
     );
@@ -209,7 +209,7 @@ class DouyinBridge {
     await _taskManager.addTask(task);
 
     try {
-      final resultStr = await _python.callDyBridge(
+      final resultStr = _python.callDyBridge(
         'batch_download_account',
         jsonEncode([secUid, nickname, savePath, taskId]),
       );
@@ -249,7 +249,7 @@ class DouyinBridge {
     await _taskManager.addTask(task);
 
     try {
-      final resultStr = await _python.callDyBridge(
+      final resultStr = _python.callDyBridge(
         'batch_download_mix',
         jsonEncode([mixId, mixName, savePath, taskId]),
       );
@@ -289,7 +289,7 @@ class DouyinBridge {
     await _taskManager.addTask(task);
 
     try {
-      final resultStr = await _python.callDyBridge(
+      final resultStr = _python.callDyBridge(
         'record_live',
         jsonEncode([liveUrl, savePath, taskId]),
       );
@@ -329,7 +329,7 @@ class DouyinBridge {
     await _taskManager.addTask(task);
 
     try {
-      final resultStr = await _python.callDyBridge(
+      final resultStr = _python.callDyBridge(
         'scrape_comments',
         jsonEncode([link, savePath, taskId]),
       );
@@ -369,7 +369,7 @@ class DouyinBridge {
     await _taskManager.addTask(task);
 
     try {
-      final resultStr = await _python.callDyBridge(
+      final resultStr = _python.callDyBridge(
         'download_cover',
         jsonEncode([link, savePath, taskId]),
       );
@@ -408,7 +408,7 @@ class DouyinBridge {
     await _taskManager.addTask(task);
 
     try {
-      final resultStr = await _python.callDyBridge(
+      final resultStr = _python.callDyBridge(
         'extract_audio',
         jsonEncode([link, savePath, taskId]),
       );
@@ -447,7 +447,7 @@ class DouyinBridge {
     await _taskManager.addTask(task);
 
     try {
-      final resultStr = await _python.callDyBridge(
+      final resultStr = _python.callDyBridge(
         'download_livephoto',
         jsonEncode([link, savePath, taskId]),
       );
@@ -471,7 +471,7 @@ class DouyinBridge {
   }
 
   static Future<String> getDataStats(String link) async {
-    return await _python.callDyBridge(
+    return _python.callDyBridge(
       'get_data_stats',
       jsonEncode([link]),
     );
@@ -491,7 +491,7 @@ class DouyinBridge {
   }
 
   static Future<String> listAccountWorks(String secUid) async {
-    return await _python.callDyBridge(
+    return _python.callDyBridge(
       'list_account_works',
       jsonEncode([secUid]),
     );
@@ -501,7 +501,7 @@ class DouyinBridge {
     String savePath,
   ) async {
     try {
-      final resultStr = await _python.callDyBridge(
+      final resultStr = _python.callDyBridge(
         'redownload_from_history',
         jsonEncode([savePath]),
       );

@@ -34,7 +34,6 @@ class PythonService {
   late NativeInitDart _init;
   late NativeDestroyDart _destroy;
   late NativeCallDart _call;
-  late NativeIsReadyDart _isReady;
   late NativeGetVersionDart _getVersion;
   late NativeAddPathDart _addPath;
 
@@ -48,7 +47,7 @@ class PythonService {
     try {
       _loadLib();
     } catch (e) {
-      print('[PythonService] Failed to load lib: $e');
+      // Failed to load lib
       return false;
     }
 
@@ -90,7 +89,7 @@ class PythonService {
         'python_bridge_destroy');
     _call =
         _lib!.lookupFunction<NativeCallC, NativeCallDart>('python_bridge_call');
-    _isReady = _lib!.lookupFunction<NativeIsReadyC, NativeIsReadyDart>(
+    _lib!.lookupFunction<NativeIsReadyC, NativeIsReadyDart>(
         'python_bridge_is_ready');
     _getVersion = _lib!.lookupFunction<NativeGetVersionC, NativeGetVersionDart>(
         'python_bridge_get_version');
