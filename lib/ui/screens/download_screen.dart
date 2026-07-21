@@ -118,14 +118,13 @@ class _DownloadScreenState extends State<DownloadScreen> {
         final albumMsg = saved ? '已保存到相册' : '相册保存失败';
         _showSnackBar('下载成功', '${result['title'] ?? ''}\n$albumMsg');
       } else {
-        // 图集下载（多文件）：扫描下载目录，批量保存
+        // 图集下载（多文件）：递归扫描下载目录（含作者子目录），批量保存
         final dir = Directory(savePath);
         if (await dir.exists()) {
-          final files = await dir
-              .list()
-              .where((e) => e is File)
-              .map((e) => e.path)
-              .toList();
+          final files = <String>[];
+          await for (final entity in dir.list(recursive: true)) {
+            if (entity is File) files.add(entity.path);
+          }
           final count = await GalleryService.instance
               .saveAllToGallery(files, album: albumName);
           _showSnackBar('下载成功', '${result['message'] ?? ''}\n$count 个文件已保存到相册');
