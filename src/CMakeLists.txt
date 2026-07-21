@@ -4,8 +4,15 @@ project(python_bridge LANGUAGES CXX C)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# 查找 Python
-find_package(Python3 COMPONENTS Development REQUIRED)
+# 如果手动指定了 Python 路径，直接使用
+if(Python3_INCLUDE_DIRS AND Python3_LIBRARIES)
+    message(STATUS "Using manual Python: include=${Python3_INCLUDE_DIRS} lib=${Python3_LIBRARIES}")
+else()
+    find_package(Python3 COMPONENTS Development QUIET)
+    if(NOT Python3_FOUND)
+        message(FATAL_ERROR "Python3 not found. Install python3-dev or pass -DPython3_INCLUDE_DIRS and -DPython3_LIBRARIES")
+    endif()
+endif()
 
 # 构建共享库 (Android/Linux/macOS) 或静态库 (iOS)
 if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
@@ -23,6 +30,4 @@ target_link_libraries(python_bridge ${Python3_LIBRARIES})
 
 if(ANDROID)
     target_link_libraries(python_bridge log)
-elseif(UNIX AND NOT APPLE)
-    # Linux
 endif()
