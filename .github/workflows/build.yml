@@ -43,7 +43,7 @@ jobs:
           path: build/app/outputs/flutter-apk/app-release.apk
 
   build-ios:
-    name: Build iOS (simulator)
+    name: Build iOS IPA (unsigned)
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -53,8 +53,20 @@ jobs:
           channel: 'stable'
       - name: Install Flutter dependencies
         run: flutter pub get
-      - name: Build iOS for simulator (debug)
-        run: flutter build ios --simulator --debug
+      - name: Build iOS (no codesign)
+        run: |
+          flutter build ios --release --no-codesign \
+            --build-settings='CODE_SIGNING_ALLOWED=NO'
+      - name: Create IPA
+        run: |
+          mkdir -p Payload
+          cp -r build/ios/iphoneos/Runner.app Payload/
+          zip -r flutter_download_manager.ipa Payload
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-ipa
+          path: flutter_download_manager.ipa
 
   build-linux:
     name: Build Linux
