@@ -3,7 +3,6 @@ import 'dart:convert';
 import 'package:uuid/uuid.dart';
 import '../model/download_task.dart';
 import '../service/download_task_manager.dart';
-import '../service/native_download_service.dart';
 
 /// 平台 Bridge 基类 — 全平台统一调用 NativeDownloadService
 /// 所有平台（Linux/Android/iOS/macOS/Windows）流程完全相同：

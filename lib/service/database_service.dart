@@ -1,173 +1,189 @@
-import 'package:sqflite/sqflite.dart';
-import 'package:path/path.dart';
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
 import '../model/download_task.dart';
 
-/// 数据库服务，对应原项目 AppDatabase + DownloadTaskDao
+/// 数据库服务 — 纯 Dart JSON 文件实现，零外部依赖
+/// 自带存储，所有平台一致：数据存于 APP 文档目录
 class DatabaseService {
   static final DatabaseService _instance = DatabaseService._internal();
   factory DatabaseService() => _instance;
   DatabaseService._internal();
 
-  Database? _database;
+  File? _file;
+  List<DownloadTask> _tasks = [];
+  bool _initialized = false;
+  final _lock = _AsyncLock();
 
-  Future<Database> get database async {
-    if (_database != null) return _database!;
-    _database = await _initDatabase();
-    return _database!;
+  Future<List<DownloadTask>> getAllTasks() async {
+    await _ensureInit();
+    return List.unmodifiable(_tasks);
   }
 
-  Future<Database> _initDatabase() async {
-    final dbPath = await getDatabasesPath();
-    final path = join(dbPath, 'download_manager.db');
-    return await openDatabase(path, version: 1, onCreate: _onCreate);
-  }
-
-  Future<void> _onCreate(Database db, int version) async {
-    await db.execute('''
-      CREATE TABLE download_tasks (
-        id TEXT PRIMARY KEY,
-        title TEXT NOT NULL,
-        url TEXT NOT NULL,
-        type TEXT NOT NULL DEFAULT 'video',
-        status TEXT NOT NULL DEFAULT 'queued',
-        downloadedSize INTEGER NOT NULL DEFAULT 0,
-        totalSize INTEGER NOT NULL DEFAULT 0,
-        filePath TEXT NOT NULL DEFAULT '',
-        errorMessage TEXT NOT NULL DEFAULT '',
-        createdAt INTEGER NOT NULL,
-        source TEXT NOT NULL DEFAULT 'douyin',
-        priority INTEGER NOT NULL DEFAULT 0,
-        retryCount INTEGER NOT NULL DEFAULT 0
-      )
-    ''');
-  }
-
-  /// 插入任务
   Future<void> insert(DownloadTask task) async {
-    final db = await database;
-    await db.insert(
-      'download_tasks',
-      task.toMap(),
-      conflictAlgorithm: ConflictAlgorithm.replace,
-    );
+    await _ensureInit();
+    await _lock.synchronized(() async {
+      _tasks.removeWhere((t) => t.id == task.id);
+      _tasks.insert(0, task);
+      await _flush();
+    });
   }
 
-  /// 更新任务
   Future<void> update(DownloadTask task) async {
-    final db = await database;
-    await db.update(
-      'download_tasks',
-      task.toMap(),
-      where: 'id = ?',
-      whereArgs: [task.id],
-    );
+    await _ensureInit();
+    await _lock.synchronized(() async {
+      final i = _tasks.indexWhere((t) => t.id == task.id);
+      if (i >= 0) _tasks[i] = task;
+      await _flush();
+    });
   }
 
-  /// 更新进度
   Future<void> updateProgress(
     String id,
     int downloadedSize,
     int totalSize,
     String title,
   ) async {
-    final db = await database;
-    await db.rawUpdate(
-      'UPDATE download_tasks SET downloadedSize = ?, totalSize = ?, title = ? WHERE id = ?',
-      [downloadedSize, totalSize, title, id],
-    );
+    await _ensureInit();
+    await _lock.synchronized(() async {
+      final i = _tasks.indexWhere((t) => t.id == id);
+      if (i >= 0) {
+        _tasks[i] = _tasks[i].copyWith(
+          downloadedSize: downloadedSize,
+          totalSize: totalSize,
+          title: title,
+        );
+        await _flush();
+      }
+    });
   }
 
-  /// 删除任务
   Future<void> deleteById(String id) async {
-    final db = await database;
-    await db.delete('download_tasks', where: 'id = ?', whereArgs: [id]);
+    await _ensureInit();
+    await _lock.synchronized(() async {
+      _tasks.removeWhere((t) => t.id == id);
+      await _flush();
+    });
   }
 
-  /// 按状态删除
   Future<void> deleteByStatus(TaskStatus status) async {
-    final db = await database;
-    await db.delete(
-      'download_tasks',
-      where: 'status = ?',
-      whereArgs: [status.name],
-    );
+    await _ensureInit();
+    await _lock.synchronized(() async {
+      _tasks.removeWhere((t) => t.status == status);
+      await _flush();
+    });
   }
 
-  /// 根据ID获取任务
   Future<DownloadTask?> getById(String id) async {
-    final db = await database;
-    final maps = await db.query(
-      'download_tasks',
-      where: 'id = ?',
-      whereArgs: [id],
-      limit: 1,
-    );
-    if (maps.isEmpty) return null;
-    return DownloadTask.fromMap(maps.first);
+    await _ensureInit();
+    return _lock.synchronized(() async {
+      final i = _tasks.indexWhere((t) => t.id == id);
+      return i >= 0 ? _tasks[i] : null;
+    });
   }
 
-  /// 根据URL查找任务
   Future<DownloadTask?> findByUrl(String url) async {
-    final db = await database;
-    final maps = await db.query(
-      'download_tasks',
-      where: 'url = ?',
-      whereArgs: [url],
-      limit: 1,
-    );
-    if (maps.isEmpty) return null;
-    return DownloadTask.fromMap(maps.first);
+    await _ensureInit();
+    return _lock.synchronized(() async {
+      final i = _tasks.indexWhere((t) => t.url == url);
+      return i >= 0 ? _tasks[i] : null;
+    });
   }
 
-  /// 获取所有任务
-  Future<List<DownloadTask>> getAllTasks() async {
-    final db = await database;
-    final maps = await db.query('download_tasks', orderBy: 'createdAt DESC');
-    return maps.map((m) => DownloadTask.fromMap(m)).toList();
-  }
-
-  /// 按来源获取任务
   Future<List<DownloadTask>> getTasksBySource(String source) async {
-    final db = await database;
-    final maps = await db.query(
-      'download_tasks',
-      where: 'source = ?',
-      whereArgs: [source],
-      orderBy: 'createdAt DESC',
-    );
-    return maps.map((m) => DownloadTask.fromMap(m)).toList();
+    await _ensureInit();
+    return _lock.synchronized(() async {
+      return List.unmodifiable(
+          _tasks.where((t) => t.source == source).toList());
+    });
   }
 
-  /// 获取待处理任务
   Future<List<DownloadTask>> getPendingTasks() async {
-    final db = await database;
-    final maps = await db.query(
-      'download_tasks',
-      where: "status IN ('queued', 'downloading', 'paused')",
-      orderBy: 'priority DESC, createdAt ASC',
-    );
-    return maps.map((m) => DownloadTask.fromMap(m)).toList();
+    await _ensureInit();
+    return _lock.synchronized(() async {
+      return List.unmodifiable(_tasks
+          .where((t) =>
+              t.status == TaskStatus.queued ||
+              t.status == TaskStatus.downloading ||
+              t.status == TaskStatus.paused)
+          .toList());
+    });
   }
 
-  /// 递增重试次数
   Future<void> incrementRetry(String id) async {
-    final db = await database;
-    await db.rawUpdate(
-      'UPDATE download_tasks SET retryCount = retryCount + 1 WHERE id = ?',
-      [id],
-    );
+    await _ensureInit();
+    await _lock.synchronized(() async {
+      final i = _tasks.indexWhere((t) => t.id == id);
+      if (i >= 0) {
+        _tasks[i] = _tasks[i].copyWith(retryCount: _tasks[i].retryCount + 1);
+        await _flush();
+      }
+    });
   }
 
-  /// 清理旧任务
   Future<void> cleanupOldTasks({int daysToKeep = 30}) async {
-    final db = await database;
-    final cutoff =
-        DateTime.now().millisecondsSinceEpoch -
-        daysToKeep * 24 * 60 * 60 * 1000;
-    await db.delete(
-      'download_tasks',
-      where: "status IN ('completed', 'failed') AND createdAt < ?",
-      whereArgs: [cutoff],
-    );
+    await _ensureInit();
+    await _lock.synchronized(() async {
+      final cutoff = DateTime.now().millisecondsSinceEpoch -
+          daysToKeep * 24 * 60 * 60 * 1000;
+      _tasks.removeWhere((t) =>
+          (t.status == TaskStatus.completed || t.status == TaskStatus.failed) &&
+          t.createdAt < cutoff);
+      await _flush();
+    });
+  }
+
+  // ═══ 内部实现 ═══
+
+  Future<void> _ensureInit() async {
+    if (_initialized) return;
+    await _lock.synchronized(() async {
+      if (_initialized) return;
+      _file = await _resolveFile();
+      if (!await _file!.exists()) {
+        _tasks = [];
+        await _flush();
+      } else {
+        try {
+          final content = await _file!.readAsString();
+          final list = jsonDecode(content) as List;
+          _tasks = list
+              .map((m) => DownloadTask.fromMap(m as Map<String, dynamic>))
+              .toList();
+        } catch (_) {
+          _tasks = [];
+        }
+      }
+      _initialized = true;
+    });
+  }
+
+  Future<File> _resolveFile() async {
+    // 所有平台使用当前目录的私有子目录（自包含存储）
+    final dir = Directory('${Directory.current.path}/download_manager_data');
+    if (!await dir.exists()) await dir.create(recursive: true);
+    return File('${dir.path}/tasks.json');
+  }
+
+  Future<void> _flush() async {
+    final json = jsonEncode(_tasks.map((t) => t.toMap()).toList());
+    await _file!.writeAsString(json, flush: true);
+  }
+}
+
+class _AsyncLock {
+  Future<void> _last = Future.value();
+  Future<T> synchronized<T>(Future<T> Function() action) {
+    final completer = Completer<T>();
+    final prev = _last;
+    _last = completer.future.then((_) {}, onError: (_) {});
+    prev.whenComplete(() async {
+      try {
+        completer.complete(await action());
+      } catch (e, st) {
+        completer.completeError(e, st);
+      }
+    });
+    return completer.future;
   }
 }
