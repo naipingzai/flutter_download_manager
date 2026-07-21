@@ -9,7 +9,12 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   final taskManager = DownloadTaskManager();
-  await taskManager.init();
+  try {
+    await taskManager.init();
+  } catch (e) {
+    // 初始化失败不阻塞应用启动
+    debugPrint('TaskManager init failed: $e');
+  }
 
   runApp(
     ChangeNotifierProvider.value(

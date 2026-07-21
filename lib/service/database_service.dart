@@ -159,8 +159,21 @@ class DatabaseService {
   }
 
   Future<File> _resolveFile() async {
-    // 所有平台使用当前目录的私有子目录（自包含存储）
-    final dir = Directory('${Directory.current.path}/download_manager_data');
+    // iOS/Android: HOME 指向应用沙盒目录，可写
+    // Linux/macOS: Directory.current 可写
+    Directory base;
+    try {
+      final home = Platform.environment['HOME'];
+      if (home != null && home.isNotEmpty && home != '/') {
+        base = Directory(home);
+      } else {
+        // iOS fallback: systemTemp.parent 是应用容器目录
+        base = Directory.systemTemp.parent;
+      }
+    } catch (_) {
+      base = Directory.systemTemp;
+    }
+    final dir = Directory('${base.path}/download_manager_data');
     if (!await dir.exists()) await dir.create(recursive: true);
     return File('${dir.path}/tasks.json');
   }
