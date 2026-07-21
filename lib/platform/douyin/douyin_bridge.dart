@@ -2,14 +2,10 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import '../bridge_base.dart';
-import '../../service/http_download_service.dart';
 import '../../service/python_service.dart';
 
-/// 抖音下载桥接层
-/// 优先使用 Python (Linux/Android)，Python 不可用时回退到纯 Dart HTTP (iOS/macOS)
+/// 抖音下载桥接层 - 纯 Python 实现
 class DouyinBridge {
-  static final HttpDownloadService _http = HttpDownloadService.instance;
-
   /// 解析抖音链接并下载
   static Future<Map<String, dynamic>> parseAndDownload(
       String link, String savePath) async {
@@ -19,35 +15,25 @@ class DouyinBridge {
       source: 'douyin',
       type: 'video',
       execute: () async {
-        if (BridgeBase.usePython) {
-          final result = BridgeBase.callPython(
-            'dy_bridge',
-            'parse_link',
-            [link, savePath, ''],
-          );
-          if (result['success'] == true) {
-            final path = result['path']?.toString() ?? '';
-            final filePath = await _findDownloadedFile(path, savePath);
-            if (filePath != null) {
-              final file = File(filePath);
-              if (await file.exists()) result['path'] = filePath;
-            }
-          }
-          return result;
-        }
-        final result = await _http.downloadDouyinVideo(link, savePath);
+        final result = BridgeBase.callPython(
+          'dy_bridge',
+          'parse_link',
+          [link, savePath, ''],
+        );
         if (result['success'] == true) {
-          final filePath = await _findDownloadedFile(
-            result['path']?.toString() ?? '',
-            savePath,
-          );
-          if (filePath != null) result['path'] = filePath;
+          final path = result['path']?.toString() ?? '';
+          final filePath = await _findDownloadedFile(path, savePath);
+          if (filePath != null) {
+            final file = File(filePath);
+            if (await file.exists()) result['path'] = filePath;
+          }
         }
         return result;
       },
     );
   }
 
+  /// 查找下载目录中最新的文件
   static Future<String?> _findDownloadedFile(
       String filePath, String savePath) async {
     if (filePath.isNotEmpty) {
@@ -69,23 +55,19 @@ class DouyinBridge {
     return null;
   }
 
+  /// 检测链接信息
   static String detectLinkInfo(String link) {
-    if (BridgeBase.usePython) {
-      final result = BridgeBase.callPython(
-        'dy_bridge',
-        'detect_link_info',
-        [link],
-      );
-      return jsonEncode(result);
-    }
-    return BridgeBase.httpModeMessage('链接检测');
+    final result = BridgeBase.callPython(
+      'dy_bridge',
+      'detect_link_info',
+      [link],
+    );
+    return jsonEncode(result);
   }
 
+  /// 录制直播
   static Future<Map<String, dynamic>> recordLive(
       String liveUrl, String savePath) async {
-    if (!BridgeBase.usePython) {
-      return BridgeBase.pythonRequiredResult('直播录制');
-    }
     return BridgeBase.callPython(
       'dy_bridge',
       'record_live',
@@ -93,11 +75,9 @@ class DouyinBridge {
     );
   }
 
+  /// 采集评论
   static Future<Map<String, dynamic>> scrapeComments(
       String link, String savePath) async {
-    if (!BridgeBase.usePython) {
-      return BridgeBase.pythonRequiredResult('评论采集');
-    }
     return BridgeBase.callPython(
       'dy_bridge',
       'scrape_comments',
@@ -105,35 +85,29 @@ class DouyinBridge {
     );
   }
 
+  /// 获取数据统计
   static String getDataStats(String link) {
-    if (BridgeBase.usePython) {
-      final result = BridgeBase.callPython(
-        'dy_bridge',
-        'get_data_stats',
-        [link],
-      );
-      return jsonEncode(result);
-    }
-    return jsonEncode(BridgeBase.pythonRequiredResult('数据统计'));
+    final result = BridgeBase.callPython(
+      'dy_bridge',
+      'get_data_stats',
+      [link],
+    );
+    return jsonEncode(result);
   }
 
+  /// 设置 Cookie
   static void setCookie(String cookie) {
-    _http.setDouyinCookie(cookie);
-    if (BridgeBase.usePython) {
-      PythonService.instance.saveCookie('douyin', cookie);
-      BridgeBase.callPython('dy_bridge', 'set_cookie', [cookie]);
-    }
+    PythonService.instance.saveCookie('douyin', cookie);
+    BridgeBase.callPython('dy_bridge', 'set_cookie', [cookie]);
   }
 
+  /// 暂停任务
   static void pauseTask(String taskId) {
-    if (BridgeBase.usePython) {
-      BridgeBase.callPython('dy_bridge', 'pause_task', [taskId]);
-    }
+    BridgeBase.callPython('dy_bridge', 'pause_task', [taskId]);
   }
 
+  /// 恢复任务
   static void resumeTask(String taskId) {
-    if (BridgeBase.usePython) {
-      BridgeBase.callPython('dy_bridge', 'resume_task', [taskId]);
-    }
+    BridgeBase.callPython('dy_bridge', 'resume_task', [taskId]);
   }
 }
