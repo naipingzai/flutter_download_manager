@@ -22,7 +22,6 @@ class PythonService {
   static PythonService? _instance;
   DynamicLibrary? _lib;
   bool _initialized = false;
-  bool _available = true;
 
   late NativeInitDart _init;
   late NativeDestroyDart _destroy;
@@ -33,24 +32,14 @@ class PythonService {
   PythonService._();
   static PythonService get instance => _instance ??= PythonService._();
 
-  bool get isAvailable => _available;
   bool get isReady => _initialized;
-
-  String get unavailableReason {
-    if (Platform.isIOS) return 'iOS 不支持内嵌 Python 解释器，请使用桌面版';
-    return 'Python 解释器不可用';
-  }
 
   Future<bool> init({String? scriptDir}) async {
     if (_initialized) return true;
-    if (Platform.isIOS) {
-      _available = false;
-      return false;
-    }
+
     try {
       _loadLib();
     } catch (e) {
-      _available = false;
       return false;
     }
 
@@ -71,6 +60,8 @@ class PythonService {
   void _loadLib() {
     if (Platform.isAndroid) {
       _lib = DynamicLibrary.open('libpython_bridge.so');
+    } else if (Platform.isIOS) {
+      _lib = DynamicLibrary.process();
     } else if (Platform.isLinux) {
       _lib = DynamicLibrary.open('${Directory.current.path}/src/build/libpython_bridge.so');
     } else if (Platform.isMacOS) {
@@ -93,7 +84,7 @@ class PythonService {
   String get version => _initialized ? _getVersion().toDartString() : 'N/A';
 
   String callFunction(String moduleName, String functionName, String argsJson) {
-    if (!_initialized) return '{"success":false,"message":"Python 未初始化 ($unavailableReason)"}';
+    if (!_initialized) return '{"success":false,"message":"Python 未初始化"}';
     final mPtr = moduleName.toNativeUtf8();
     final fPtr = functionName.toNativeUtf8();
     final aPtr = argsJson.toNativeUtf8();
