@@ -1,10 +1,11 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'package:path_provider/path_provider.dart';
 import '../model/download_task.dart';
 
 /// 数据库服务 — 纯 Dart JSON 文件实现，零外部依赖
-/// 自带存储，所有平台一致：数据存于 APP 文档目录
+/// 使用 path_provider 获取正确的应用文档目录
 class DatabaseService {
   static final DatabaseService _instance = DatabaseService._internal();
   factory DatabaseService() => _instance;
@@ -139,46 +140,46 @@ class DatabaseService {
     if (_initialized) return;
     await _lock.synchronized(() async {
       if (_initialized) return;
-      _file = await _resolveFile();
-      if (!await _file!.exists()) {
-        _tasks = [];
-        await _flush();
-      } else {
-        try {
-          final content = await _file!.readAsString();
-          final list = jsonDecode(content) as List;
-          _tasks = list
-              .map((m) => DownloadTask.fromMap(m as Map<String, dynamic>))
-              .toList();
-        } catch (_) {
+      try {
+        _file = await _resolveFile();
+        if (!await _file!.exists()) {
           _tasks = [];
+          await _flush();
+        } else {
+          try {
+            final content = await _file!.readAsString();
+            final list = jsonDecode(content) as List;
+            _tasks = list
+                .map((m) => DownloadTask.fromMap(m as Map<String, dynamic>))
+                .toList();
+          } catch (_) {
+            _tasks = [];
+          }
         }
+      } catch (_) {
+        // 初始化失败，使用内存存储
+        _tasks = [];
       }
       _initialized = true;
     });
   }
 
   Future<File> _resolveFile() async {
-    // iOS/Android: HOME 指向应用沙盒目录，可写
-    // Linux/macOS: Directory.current 可写
-    Directory base;
-    try {
-      final home = Platform.environment['HOME'];
-      if (home != null && home.isNotEmpty && home != '/') {
-        base = Directory(home);
-      } else {
-        // iOS fallback: systemTemp.parent 是应用容器目录
-        base = Directory.systemTemp.parent;
-      }
-    } catch (_) {
-      base = Directory.systemTemp;
+    // 使用 path_provider 获取系统提供的应用文档目录
+    // iOS: ~/Documents/
+    // Android: /data/data/<package>/files/
+    // Linux: ~/.local/share/<app>/
+    // macOS: ~/Library/Application Support/
+    final appDir = await getApplicationDocumentsDirectory();
+    final dir = Directory('${appDir.path}/download_manager_data');
+    if (!await dir.exists()) {
+      await dir.create(recursive: true);
     }
-    final dir = Directory('${base.path}/download_manager_data');
-    if (!await dir.exists()) await dir.create(recursive: true);
     return File('${dir.path}/tasks.json');
   }
 
   Future<void> _flush() async {
+    if (_file == null) return;
     final json = jsonEncode(_tasks.map((t) => t.toMap()).toList());
     await _file!.writeAsString(json, flush: true);
   }
