@@ -4,12 +4,18 @@ import 'package:uuid/uuid.dart';
 import '../model/download_task.dart';
 import '../service/download_task_manager.dart';
 import '../service/python_service.dart';
+import '../service/native_download_service.dart';
 
 /// 平台 Bridge 基类，提取 DouyinBridge / XhsBridge 的公共逻辑
+/// 下载策略: Python C++ 桥接优先，纯 Dart 引擎作为全平台回退
 abstract class BridgeBase {
   static const _uuid = Uuid();
   static final DownloadTaskManager _taskManager = DownloadTaskManager();
   static final PythonService _python = PythonService.instance;
+  static final NativeDownloadService _native = NativeDownloadService.instance;
+
+  /// Python 桥接是否可用
+  static bool get usePython => _python.isReady;
 
   /// 创建下载任务并执行操作
   static Future<Map<String, dynamic>> executeTask({
@@ -66,4 +72,7 @@ abstract class BridgeBase {
     final resultStr = _python.callFunction(module, function, jsonEncode(args));
     return jsonDecode(resultStr) as Map<String, dynamic>;
   }
+
+  /// 纯 Dart 下载引擎引用
+  static NativeDownloadService get native => _native;
 }
