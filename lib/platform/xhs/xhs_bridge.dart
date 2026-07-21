@@ -4,12 +4,14 @@ import 'package:uuid/uuid.dart';
 import '../../model/download_task.dart';
 import '../../service/download_task_manager.dart';
 import '../../service/python_service.dart';
+import '../../service/http_fallback.dart';
 
 /// 小红书下载桥接层 - 通过 PythonRunner 调用 xhs_bridge.py
 class XhsBridge {
   static const _uuid = Uuid();
   static final DownloadTaskManager _taskManager = DownloadTaskManager();
   static final PythonService _python = PythonService.instance;
+  static final HttpFallback _http = HttpFallback.instance;
 
   static Future<Map<String, dynamic>> parseAndDownload(
     String link,
@@ -26,10 +28,20 @@ class XhsBridge {
     await _taskManager.addTask(task);
 
     try {
-      final resultStr = _python.callXhsBridge(
-        'parse_link',
-        jsonEncode([link, savePath, taskId]),
-      );
+      String resultStr;
+      if (!_python.isReady) {
+        final result = await _http.downloadFromShareLink(
+          shareUrl: link,
+          savePath: savePath,
+          platform: 'xhs',
+        );
+        resultStr = jsonEncode(result);
+      } else {
+        resultStr = _python.callXhsBridge(
+          'parse_link',
+          jsonEncode([link, savePath, taskId]),
+        );
+      }
       final result = jsonDecode(resultStr) as Map<String, dynamic>;
       final success = result['success'] == true;
       final title = result['title']?.toString() ?? link;

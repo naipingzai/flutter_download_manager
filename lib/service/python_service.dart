@@ -3,20 +3,14 @@ import 'dart:ffi';
 import 'dart:io';
 import 'package:ffi/ffi.dart';
 
-/// FFI 类型定义
 typedef NativeInitC = Bool Function(Pointer<Utf8>, Pointer<Utf8>);
 typedef NativeInitDart = bool Function(Pointer<Utf8>, Pointer<Utf8>);
 
 typedef NativeDestroyC = Void Function();
 typedef NativeDestroyDart = void Function();
 
-typedef NativeCallC = Pointer<Utf8> Function(
-    Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>);
-typedef NativeCallDart = Pointer<Utf8> Function(
-    Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>);
-
-typedef NativeIsReadyC = Bool Function();
-typedef NativeIsReadyDart = bool Function();
+typedef NativeCallC = Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>);
+typedef NativeCallDart = Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>);
 
 typedef NativeGetVersionC = Pointer<Utf8> Function();
 typedef NativeGetVersionDart = Pointer<Utf8> Function();
@@ -24,12 +18,11 @@ typedef NativeGetVersionDart = Pointer<Utf8> Function();
 typedef NativeAddPathC = Void Function(Pointer<Utf8>);
 typedef NativeAddPathDart = void Function(Pointer<Utf8>);
 
-/// Python 服务 - 通过 FFI 调用嵌入的 CPython 解释器
-/// 所有平台统一：iOS/Android/Linux 都用 FFI
 class PythonService {
   static PythonService? _instance;
   DynamicLibrary? _lib;
   bool _initialized = false;
+  bool _available = true;
 
   late NativeInitDart _init;
   late NativeDestroyDart _destroy;
@@ -40,14 +33,24 @@ class PythonService {
   PythonService._();
   static PythonService get instance => _instance ??= PythonService._();
 
-  /// 初始化 Python 解释器
+  bool get isAvailable => _available;
+  bool get isReady => _initialized;
+
+  String get unavailableReason {
+    if (Platform.isIOS) return 'iOS 不支持内嵌 Python 解释器，请使用桌面版';
+    return 'Python 解释器不可用';
+  }
+
   Future<bool> init({String? scriptDir}) async {
     if (_initialized) return true;
-
+    if (Platform.isIOS) {
+      _available = false;
+      return false;
+    }
     try {
       _loadLib();
     } catch (e) {
-      // Failed to load lib
+      _available = false;
       return false;
     }
 
@@ -55,9 +58,7 @@ class PythonService {
     final scriptPtr = (scriptDir ?? _defaultScriptDir()).toNativeUtf8();
     try {
       _initialized = _init(homePtr, scriptPtr);
-      if (_initialized) {
-        _addPath(scriptPtr);
-      }
+      if (_initialized) _addPath(scriptPtr);
       return _initialized;
     } finally {
       calloc.free(homePtr);
@@ -65,59 +66,39 @@ class PythonService {
     }
   }
 
-  String _defaultScriptDir() {
-    return '${Directory.current.path}/python';
-  }
+  String _defaultScriptDir() => '${Directory.current.path}/python';
 
   void _loadLib() {
     if (Platform.isAndroid) {
       _lib = DynamicLibrary.open('libpython_bridge.so');
-    } else if (Platform.isIOS) {
-      _lib = DynamicLibrary.process();
     } else if (Platform.isLinux) {
-      _lib = DynamicLibrary.open(
-          '${Directory.current.path}/src/build/libpython_bridge.so');
+      _lib = DynamicLibrary.open('${Directory.current.path}/src/build/libpython_bridge.so');
     } else if (Platform.isMacOS) {
       _lib = DynamicLibrary.open('libpython_bridge.dylib');
     } else if (Platform.isWindows) {
       _lib = DynamicLibrary.open('python_bridge.dll');
     }
 
-    _init =
-        _lib!.lookupFunction<NativeInitC, NativeInitDart>('python_bridge_init');
-    _destroy = _lib!.lookupFunction<NativeDestroyC, NativeDestroyDart>(
-        'python_bridge_destroy');
-    _call =
-        _lib!.lookupFunction<NativeCallC, NativeCallDart>('python_bridge_call');
-    _lib!.lookupFunction<NativeIsReadyC, NativeIsReadyDart>(
-        'python_bridge_is_ready');
-    _getVersion = _lib!.lookupFunction<NativeGetVersionC, NativeGetVersionDart>(
-        'python_bridge_get_version');
-    _addPath = _lib!.lookupFunction<NativeAddPathC, NativeAddPathDart>(
-        'python_bridge_add_path');
+    _init = _lib!.lookupFunction<NativeInitC, NativeInitDart>('python_bridge_init');
+    _destroy = _lib!.lookupFunction<NativeDestroyC, NativeDestroyDart>('python_bridge_destroy');
+    _call = _lib!.lookupFunction<NativeCallC, NativeCallDart>('python_bridge_call');
+    _getVersion = _lib!.lookupFunction<NativeGetVersionC, NativeGetVersionDart>('python_bridge_get_version');
+    _addPath = _lib!.lookupFunction<NativeAddPathC, NativeAddPathDart>('python_bridge_add_path');
   }
 
   void destroy() {
-    if (_initialized) {
-      _destroy();
-      _initialized = false;
-    }
+    if (_initialized) { _destroy(); _initialized = false; }
   }
 
-  bool get isReady => _initialized;
-  String get version => _getVersion().toDartString();
+  String get version => _initialized ? _getVersion().toDartString() : 'N/A';
 
-  /// 调用 Python 模块函数
   String callFunction(String moduleName, String functionName, String argsJson) {
-    if (!_initialized) {
-      return '{"success":false,"message":"Python not initialized"}';
-    }
+    if (!_initialized) return '{"success":false,"message":"Python 未初始化 ($unavailableReason)"}';
     final mPtr = moduleName.toNativeUtf8();
     final fPtr = functionName.toNativeUtf8();
     final aPtr = argsJson.toNativeUtf8();
     try {
-      final result = _call(mPtr, fPtr, aPtr);
-      return result.toDartString();
+      return _call(mPtr, fPtr, aPtr).toDartString();
     } finally {
       calloc.free(mPtr);
       calloc.free(fPtr);
@@ -125,32 +106,19 @@ class PythonService {
     }
   }
 
-  /// 设置 Cookie 并持久化到配置文件
   Future<void> saveCookie(String platform, String cookie) async {
     final configPath = '${_defaultScriptDir()}/.cookie_config.json';
     try {
-      final config = <String, dynamic>{
-        '${platform}_cookie': cookie,
-      };
-      // 读取现有配置
+      final config = <String, dynamic>{'${platform}_cookie': cookie};
       final file = File(configPath);
       if (await file.exists()) {
-        final existing =
-            jsonDecode(await file.readAsString()) as Map<String, dynamic>;
-        config.addAll(existing);
+        config.addAll(jsonDecode(await file.readAsString()) as Map<String, dynamic>);
       }
       config['${platform}_cookie'] = cookie;
       await file.writeAsString(jsonEncode(config));
     } catch (_) {}
   }
 
-  /// 调用抖音 bridge
-  String callDyBridge(String functionName, String argsJson) {
-    return callFunction('dy_bridge', functionName, argsJson);
-  }
-
-  /// 调用小红书 bridge
-  String callXhsBridge(String functionName, String argsJson) {
-    return callFunction('xhs_bridge', functionName, argsJson);
-  }
+  String callDyBridge(String functionName, String argsJson) => callFunction('dy_bridge', functionName, argsJson);
+  String callXhsBridge(String functionName, String argsJson) => callFunction('xhs_bridge', functionName, argsJson);
 }
