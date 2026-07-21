@@ -23,13 +23,54 @@ jobs:
         with:
           python-version: '3.12'
 
+      - name: Install Python dependencies
+        run: pip install -r python/requirements.txt
+
+      - name: Install NDK
+        uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: r26d
+
+      - name: Build C++ Python bridge (ARM64)
+        run: |
+          cd src
+          mkdir -p build-android-arm64
+          cd build-android-arm64
+          cmake .. \
+            -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake \
+            -DANDROID_ABI=arm64-v8a \
+            -DANDROID_PLATFORM=android-21 \
+            -DPython3_ROOT_DIR=/opt/hostedtoolcache/Python/3.12.*/x64/ \
+            -DCMAKE_BUILD_TYPE=Release
+          make -j$(nproc)
+
+      - name: Build C++ Python bridge (ARMv7)
+        run: |
+          cd src
+          mkdir -p build-android-armv7
+          cd build-android-armv7
+          cmake .. \
+            -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake \
+            -DANDROID_ABI=armeabi-v7a \
+            -DANDROID_PLATFORM=android-21 \
+            -DPython3_ROOT_DIR=/opt/hostedtoolcache/Python/3.12.*/x64/ \
+            -DCMAKE_BUILD_TYPE=Release
+          make -j$(nproc)
+
+      - name: Copy native libraries to Android
+        run: |
+          mkdir -p android/app/src/main/jniLibs/arm64-v8a
+          mkdir -p android/app/src/main/jniLibs/armeabi-v7a
+          cp src/build-android-arm64/libpython_bridge.so android/app/src/main/jniLibs/arm64-v8a/
+          cp src/build-android-armv7/libpython_bridge.so android/app/src/main/jniLibs/armeabi-v7a/
+          # 复制 Python 脚本到 assets
+          mkdir -p android/app/src/main/assets/python
+          cp python/*.py android/app/src/main/assets/python/
+
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.44.x'
           channel: 'stable'
-
-      - name: Install Python dependencies
-        run: pip install -r python/requirements.txt
 
       - name: Install Flutter dependencies
         run: flutter pub get
@@ -56,13 +97,33 @@ jobs:
         with:
           python-version: '3.12'
 
+      - name: Install Python dependencies
+        run: pip install -r python/requirements.txt
+
+      - name: Build C++ Python bridge for iOS (ARM64)
+        run: |
+          cd src
+          mkdir -p build-ios-arm64
+          cd build-ios-arm64
+          cmake .. \
+            -DCMAKE_SYSTEM_NAME=iOS \
+            -DCMAKE_OSX_ARCHITECTURES=arm64 \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=13.0 \
+            -DPython3_ROOT_DIR=$(python3 -c "import sys; print(sys.prefix)") \
+            -DCMAKE_BUILD_TYPE=Release
+          make -j$(sysctl -n hw.ncpu)
+
+      - name: Copy native libraries to iOS
+        run: |
+          cp src/build-ios-arm64/libpython_bridge.a ios/
+          # 复制 Python 脚本
+          mkdir -p ios/Runner/python
+          cp python/*.py ios/Runner/python/
+
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.44.x'
           channel: 'stable'
-
-      - name: Install Python dependencies
-        run: pip install -r python/requirements.txt
 
       - name: Install Flutter dependencies
         run: flutter pub get
