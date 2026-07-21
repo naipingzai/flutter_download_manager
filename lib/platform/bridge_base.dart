@@ -42,8 +42,16 @@ abstract class BridgeBase {
       final title = result['title']?.toString() ?? link;
 
       if (success) {
+        final size = result['size'] as int? ?? 0;
+        final filePath = result['path']?.toString() ?? '';
         await _taskManager.updateTask(
-          task.copyWith(title: title, status: TaskStatus.completed),
+          task.copyWith(
+            title: title,
+            status: TaskStatus.completed,
+            totalSize: size,
+            downloadedSize: size,
+            filePath: filePath,
+          ),
         );
       } else {
         await _taskManager.updateTask(

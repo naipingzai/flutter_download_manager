@@ -1,5 +1,6 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
-
+import 'package:path_provider/path_provider.dart';
 import '../../service/cookie_store.dart';
 
 /// 设置页面 - 完全复刻原项目 ProfileScreen
@@ -57,6 +58,60 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   // Cookie 对话框已移至 CookieManageScreen
 
+  /// 清理下载缓存（应用文档目录中的下载文件）
+  Future<void> _clearCache() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('清理缓存'),
+        content: const Text('将删除应用中保存的所有下载文件（不影响已保存到相册的内容）。确定继续？'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(
+              foregroundColor: Theme.of(context).colorScheme.error,
+            ),
+            child: const Text('确定'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    try {
+      final appDir = await getApplicationDocumentsDirectory();
+      final dirs = ['DyDownload', 'XhsDownload'];
+      int deletedCount = 0;
+      for (final dirName in dirs) {
+        final dir = Directory('${appDir.path}/$dirName');
+        if (await dir.exists()) {
+          await for (final entity in dir.list(recursive: true)) {
+            if (entity is File) {
+              await entity.delete();
+              deletedCount++;
+            }
+          }
+          await dir.delete(recursive: true);
+        }
+      }
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('已清理 $deletedCount 个文件')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('清理失败: $e')),
+        );
+      }
+    }
+  }
+
   void _showAboutDialog() {
     showDialog(
       context: context,
@@ -102,6 +157,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
             title: 'Cookie 管理',
             subtitle: _cookieStatus,
             onTap: _handleCookieTap,
+          ),
+
+          const SizedBox(height: 8),
+
+          // 缓存管理行
+          _SettingsRow(
+            title: '清理缓存',
+            subtitle: '删除下载的临时文件',
+            onTap: _clearCache,
           ),
 
           const SizedBox(height: 24),

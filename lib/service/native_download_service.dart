@@ -363,8 +363,11 @@ class NativeDownloadService {
     return await resp.transform(utf8.decoder).join();
   }
 
-  Future<String?> _downloadFile(
-      String url, String savePath, String filename) async {
+  /// 下载文件，支持进度回调
+  /// [onProgress]: (downloadedBytes, totalBytes) 回调
+  /// 返回文件路径，失败返回 null
+  Future<String?> _downloadFile(String url, String savePath, String filename,
+      {void Function(int downloaded, int total)? onProgress}) async {
     try {
       await Directory(savePath).create(recursive: true);
       final uri = Uri.parse(url);
@@ -379,6 +382,15 @@ class NativeDownloadService {
 
       final resp = await req.close();
       if (resp.statusCode != 200 && resp.statusCode != 206) return null;
+
+      // 获取总大小
+      final total = int.tryParse(resp.headers.value('content-length') ?? '') ??
+          (resp.statusCode == 206
+              ? int.tryParse(
+                      resp.headers.value('content-range')?.split('/').last ??
+                          '') ??
+                  0
+              : 0);
 
       // 根据实际 content-type 修正文件扩展名
       final ct = (resp.headers.value('content-type') ?? '').toLowerCase();
@@ -400,7 +412,12 @@ class NativeDownloadService {
 
       final file = File(filePath);
       final sink = file.openWrite();
-      await resp.pipe(sink);
+      int downloaded = 0;
+      await for (final chunk in resp) {
+        sink.add(chunk);
+        downloaded += chunk.length;
+        onProgress?.call(downloaded, total);
+      }
       await sink.flush();
       await sink.close();
 
