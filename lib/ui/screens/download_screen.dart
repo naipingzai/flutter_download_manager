@@ -4,7 +4,6 @@ import 'package:flutter/services.dart';
 import '../../platform/douyin/douyin_bridge.dart';
 import '../../platform/xhs/xhs_bridge.dart';
 import '../../service/cookie_store.dart';
-import '../../service/python_service.dart';
 
 /// 下载页面 - 完全复刻原项目 DownloadScreen
 /// 链接输入框 + 从剪贴板粘贴按钮 + 工具卡片列表
@@ -79,10 +78,7 @@ class _DownloadScreenState extends State<DownloadScreen> {
       _showSnackBar('${widget.platformName}下载', '请先输入链接');
       return;
     }
-    if (!PythonService.instance.isReady) {
-      // Python 不可用，使用 HTTP 降级
-      _syncCookie();
-    } else if (!await _syncCookie()) {
+    if (!await _syncCookie()) {
       _showSnackBar(
         '${widget.platformName}下载',
         '请先在设置中配置${widget.platformName}Cookie',

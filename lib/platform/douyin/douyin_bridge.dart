@@ -5,12 +5,17 @@ import 'package:uuid/uuid.dart';
 import '../../model/download_task.dart';
 import '../../service/download_task_manager.dart';
 import '../../service/python_service.dart';
+import '../../service/http_download_service.dart';
 
-/// 抖音下载桥接层 - 通过 PythonService FFI 调用 dy_bridge.py
+/// 抖音下载桥接层
+/// 优先使用 Python (Linux/Android)，Python 不可用时回退到纯 Dart HTTP (iOS/macOS)
 class DouyinBridge {
   static const _uuid = Uuid();
   static final DownloadTaskManager _taskManager = DownloadTaskManager();
   static final PythonService _python = PythonService.instance;
+  static final HttpDownloadService _http = HttpDownloadService.instance;
+
+  static bool get _usePython => _python.isReady;
 
   /// 解析抖音链接并下载
   static Future<Map<String, dynamic>> parseAndDownload(
@@ -25,9 +30,18 @@ class DouyinBridge {
     await _taskManager.addTask(task);
 
     try {
-      final resultStr = _python.callDyBridge(
-          'parse_link', jsonEncode([link, savePath, taskId]));
-      final result = jsonDecode(resultStr) as Map<String, dynamic>;
+      Map<String, dynamic> result;
+
+      if (_usePython) {
+        // Python 路径
+        final resultStr = _python.callDyBridge(
+            'parse_link', jsonEncode([link, savePath, taskId]));
+        result = jsonDecode(resultStr) as Map<String, dynamic>;
+      } else {
+        // HTTP 回退路径
+        result = await _http.downloadDouyinVideo(link, savePath);
+      }
+
       final success = result['success'] == true;
       final title = result['title']?.toString() ?? link;
       final filePath = result['path']?.toString() ?? '';
@@ -80,12 +94,19 @@ class DouyinBridge {
   }
 
   /// 检测链接信息（视频/图集/直播）
-  static Future<String> detectLinkInfo(String link) async =>
-      _python.callDyBridge('detect_link_info', jsonEncode([link]));
+  static Future<String> detectLinkInfo(String link) async {
+    if (_usePython) {
+      return _python.callDyBridge('detect_link_info', jsonEncode([link]));
+    }
+    return '{"success":true,"message":"HTTP模式：请直接粘贴链接下载"}';
+  }
 
   /// 录制直播
   static Future<Map<String, dynamic>> recordLive(
       String liveUrl, String savePath) async {
+    if (!_usePython) {
+      return {'success': false, 'message': '直播录制需要 Python 环境'};
+    }
     final taskId = _uuid.v4();
     final task = DownloadTask(
         id: taskId,
@@ -116,6 +137,9 @@ class DouyinBridge {
   /// 采集评论
   static Future<Map<String, dynamic>> scrapeComments(
       String link, String savePath) async {
+    if (!_usePython) {
+      return {'success': false, 'message': '评论采集需要 Python 环境'};
+    }
     final taskId = _uuid.v4();
     final task = DownloadTask(
         id: taskId,
@@ -144,20 +168,33 @@ class DouyinBridge {
   }
 
   /// 获取数据统计
-  static Future<String> getDataStats(String link) async =>
-      _python.callDyBridge('get_data_stats', jsonEncode([link]));
+  static Future<String> getDataStats(String link) async {
+    if (_usePython) {
+      return _python.callDyBridge('get_data_stats', jsonEncode([link]));
+    }
+    return '{"success":false,"message":"数据统计需要 Python 环境"}';
+  }
 
   /// 设置 Cookie
   static void setCookie(String cookie) {
-    _python.saveCookie('douyin', cookie);
-    _python.callDyBridge('set_cookie', jsonEncode([cookie]));
+    _http.setDouyinCookie(cookie);
+    if (_usePython) {
+      _python.saveCookie('douyin', cookie);
+      _python.callDyBridge('set_cookie', jsonEncode([cookie]));
+    }
   }
 
   /// 暂停任务
-  static void pauseTask(String taskId) =>
+  static void pauseTask(String taskId) {
+    if (_usePython) {
       _python.callDyBridge('pause_task', jsonEncode([taskId]));
+    }
+  }
 
   /// 恢复任务
-  static void resumeTask(String taskId) =>
+  static void resumeTask(String taskId) {
+    if (_usePython) {
       _python.callDyBridge('resume_task', jsonEncode([taskId]));
+    }
+  }
 }
