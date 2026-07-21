@@ -206,9 +206,10 @@ class NativeDownloadService {
         }
       }
       if (primaryUrl == null) {
+        // 抖音图片 url_list 按质量从低到高排列，取最后一个（原图）
         final urlList = img['url_list'] as List?;
         if (urlList != null && urlList.isNotEmpty) {
-          primaryUrl = urlList.first.toString();
+          primaryUrl = urlList.last.toString();
         }
       }
       if (primaryUrl == null) continue;
