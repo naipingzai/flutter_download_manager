@@ -2,37 +2,51 @@ import 'dart:io';
 import 'package:gal/gal.dart';
 
 /// 相册保存服务 — 跨平台保存媒体文件到系统相册
-/// 支持 iOS (PhotoKit)、Android (MediaStore)、Linux (无操作)
+/// iOS: PhotoKit (gal 插件)
+/// Android: MediaStore (gal 插件)
+/// Linux/桌面: 文件已在下载目录，跳过
 class GalleryService {
   static final GalleryService instance = GalleryService._();
   GalleryService._();
 
-  /// 请求相册访问权限
+  bool _permissionGranted = false;
+
+  /// 请求相册写入权限
+  /// iOS: 必须在 Info.plist 中配置 NSPhotoLibraryAddUsageDescription
+  /// Android: gal 自动处理 MediaStore 权限
   Future<bool> requestPermission() async {
+    if (_permissionGranted) return true;
     if (Platform.isLinux || Platform.isWindows || Platform.isMacOS) {
-      // 桌面平台不需要相册权限，文件保存在 Downloads 目录
       return true;
     }
     try {
+      // gal 的 requestAccess 会弹出系统权限对话框
       await Gal.requestAccess();
+      _permissionGranted = true;
       return true;
-    } catch (_) {
+    } catch (e) {
+      // 权限被拒绝或出错
+      print('[Gallery] Permission request failed: $e');
       return false;
     }
   }
 
-  /// 保存文件到相册
-  /// 自动判断图片/视频，支持 JPG/PNG/WEBP/MP4 格式
+  /// 保存文件到系统相册
+  /// [filePath]: 完整文件路径
+  /// [album]: 相册名称（可选，iOS/Android 均支持）
+  /// 返回 true 表示保存成功
   Future<bool> saveToGallery(String filePath, {String? album}) async {
     if (Platform.isLinux || Platform.isWindows || Platform.isMacOS) {
-      // 桌面平台: 文件已经在 Downloads 目录，无需额外操作
-      return true;
+      return true; // 桌面平台无需相册操作
+    }
+
+    final file = File(filePath);
+    if (!await file.exists()) {
+      print('[Gallery] File not found: $filePath');
+      return false;
     }
 
     try {
-      final file = File(filePath);
-      if (!await file.exists()) return false;
-
       final ext = filePath.toLowerCase().split('.').last;
       final isVideo =
           ext == 'mp4' || ext == 'mov' || ext == 'avi' || ext == 'mkv';
@@ -42,8 +56,10 @@ class GalleryService {
       } else {
         await Gal.putImage(filePath, album: album);
       }
+      print('[Gallery] Saved to gallery: $filePath');
       return true;
-    } catch (_) {
+    } catch (e) {
+      print('[Gallery] Save failed for $filePath: $e');
       return false;
     }
   }

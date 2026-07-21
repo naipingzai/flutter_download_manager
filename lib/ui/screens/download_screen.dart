@@ -106,12 +106,33 @@ class _DownloadScreenState extends State<DownloadScreen> {
       result = await DouyinBridge.parseAndDownload(url, savePath);
     }
     if (result['success'] == true) {
-      final path = result['path'] ?? savePath;
       // 自动保存到相册
       await GalleryService.instance.requestPermission();
-      final saved = await GalleryService.instance.saveToGallery(path);
-      final albumMsg = saved ? '已保存到相册' : '相册保存跳过';
-      _showSnackBar('下载成功', '${result['title'] ?? ''}\n$albumMsg');
+      final path = result['path']?.toString() ?? '';
+      final albumName = widget.platformId == 'xhs' ? '小红书下载' : '抖音下载';
+
+      if (path.isNotEmpty) {
+        // 单文件下载（视频/图片）：直接保存
+        final saved =
+            await GalleryService.instance.saveToGallery(path, album: albumName);
+        final albumMsg = saved ? '已保存到相册' : '相册保存失败';
+        _showSnackBar('下载成功', '${result['title'] ?? ''}\n$albumMsg');
+      } else {
+        // 图集下载（多文件）：扫描下载目录，批量保存
+        final dir = Directory(savePath);
+        if (await dir.exists()) {
+          final files = await dir
+              .list()
+              .where((e) => e is File)
+              .map((e) => e.path)
+              .toList();
+          final count = await GalleryService.instance
+              .saveAllToGallery(files, album: albumName);
+          _showSnackBar('下载成功', '${result['message'] ?? ''}\n$count 个文件已保存到相册');
+        } else {
+          _showSnackBar('下载成功', result['message'] ?? '已完成');
+        }
+      }
     } else {
       _showSnackBar('下载失败', result['message'] ?? '未知错误');
     }
