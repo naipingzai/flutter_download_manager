@@ -19,6 +19,12 @@ abstract class BridgeBase {
     required String type,
     required Future<Map<String, dynamic>> Function() execute,
   }) async {
+    // 去重：如果同 URL 的任务已完成，直接返回成功
+    final existing = _taskManager.findByUrl(link);
+    if (existing != null && existing.status == TaskStatus.completed) {
+      return {'success': true, 'title': existing.title, 'message': '已下载过'};
+    }
+
     final taskId = _uuid.v4();
     final task = DownloadTask(
       id: taskId,

@@ -164,19 +164,27 @@ class _DownloadScreenState extends State<DownloadScreen> {
     _showSnackBar('收藏夹', '功能执行中...');
   }
 
-  void _recordLive(String url) {
+  Future<void> _recordLive(String url) async {
     if (widget.platformId == 'xhs') {
       _showSnackBar('直播录制', '小红书暂不支持');
     } else {
-      DouyinBridge.recordLive(url, '/tmp/downloads/douyin');
+      final appDir = await getApplicationDocumentsDirectory();
+      final savePath = '${appDir.path}/DyDownload';
+      await Directory(savePath).create(recursive: true);
+      final result = await DouyinBridge.recordLive(url, savePath);
+      _showSnackBar('直播录制', result['message']?.toString() ?? '已完成');
     }
   }
 
-  void _scrapeComments(String url) {
+  Future<void> _scrapeComments(String url) async {
     if (widget.platformId == 'xhs') {
       _showSnackBar('评论采集', '小红书暂不支持');
     } else {
-      DouyinBridge.scrapeComments(url, '/tmp/downloads/douyin');
+      final appDir = await getApplicationDocumentsDirectory();
+      final savePath = '${appDir.path}/DyDownload';
+      await Directory(savePath).create(recursive: true);
+      final result = await DouyinBridge.scrapeComments(url, savePath);
+      _showSnackBar('评论采集', result['message']?.toString() ?? '已完成');
     }
   }
 

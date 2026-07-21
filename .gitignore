@@ -70,21 +70,8 @@ app.*.map.json
 **/linux/flutter/ephemeral/
 **/linux/flutter/generated_plugins.cmake
 
-# C++ build artifacts
-src/build/
-*.so
-*.dylib
-*.dll
-*.o
-*.a
-
-# Python
-python/__pycache__/
-*.pyo
-*.pyd
-
-# Build output
-build/
+# Runtime data (应用运行时生成的数据)
+download_manager_data/
 
 # macOS, Windows, Web (not targeting these)
 /macos/

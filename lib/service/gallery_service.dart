@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:gal/gal.dart';
 
 /// 相册保存服务 — 跨平台保存媒体文件到系统相册
@@ -26,7 +27,7 @@ class GalleryService {
       return true;
     } catch (e) {
       // 权限被拒绝或出错
-      print('[Gallery] Permission request failed: $e');
+      debugPrint('[Gallery] Permission request failed: $e');
       return false;
     }
   }
@@ -42,7 +43,7 @@ class GalleryService {
 
     final file = File(filePath);
     if (!await file.exists()) {
-      print('[Gallery] File not found: $filePath');
+      debugPrint('[Gallery] File not found: $filePath');
       return false;
     }
 
@@ -56,10 +57,10 @@ class GalleryService {
       } else {
         await Gal.putImage(filePath, album: album);
       }
-      print('[Gallery] Saved to gallery: $filePath');
+      debugPrint('[Gallery] Saved to gallery: $filePath');
       return true;
     } catch (e) {
-      print('[Gallery] Save failed for $filePath: $e');
+      debugPrint('[Gallery] Save failed for $filePath: $e');
       return false;
     }
   }
