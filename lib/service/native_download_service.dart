@@ -116,12 +116,26 @@ class NativeDownloadService {
               as Map<String, dynamic>?)?['nickname'] as String?) ??
           '';
 
+      // 构建作者目录: savePath/作者名/
+      final authorDir = author.isNotEmpty
+          ? savePath +
+              '/' +
+              author.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_').trim()
+          : savePath;
+      await Directory(authorDir).create(recursive: true);
+
+      final safeTitle = (author.isNotEmpty ? '${author}_' : '') +
+          desc.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_').trim();
+      final fileBaseName = safeTitle.substring(0, min(60, safeTitle.length));
+
+      // 优先检查 images（图片动态/图集），再检查 video
+      final images = awemeDetail['images'] as List?;
+      if (images != null && images.isNotEmpty) {
+        return await _downloadDouyinImages(images, fileBaseName, authorDir);
+      }
+
       final video = awemeDetail['video'] as Map<String, dynamic>?;
       if (video == null) {
-        final images = awemeDetail['images'] as List?;
-        if (images != null && images.isNotEmpty) {
-          return await _downloadDouyinImages(images, desc, savePath);
-        }
         return {'success': false, 'message': '该作品无可下载内容'};
       }
 
@@ -150,18 +164,17 @@ class NativeDownloadService {
         return {'success': false, 'message': '无法获取视频下载地址'};
       }
 
-      final title = author.isNotEmpty ? '${author}_$desc' : desc;
-      final safeTitle = title.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_').trim();
-      final filePath = await _downloadFile(videoUrl, savePath,
-          '${safeTitle.substring(0, min(50, safeTitle.length))}.mp4');
+      final filePath =
+          await _downloadFile(videoUrl, authorDir, '$fileBaseName.mp4');
 
       if (filePath != null) {
         final size = await File(filePath).length();
         return {
           'success': true,
-          'title': title,
+          'title': desc,
           'path': filePath,
-          'size': size
+          'size': size,
+          'author': author,
         };
       }
       return {'success': false, 'message': '文件下载失败'};
@@ -174,20 +187,44 @@ class NativeDownloadService {
       List images, String title, String savePath) async {
     await Directory(savePath).create(recursive: true);
     int count = 0;
+    int videoCount = 0;
     for (var i = 0; i < images.length; i++) {
       final img = images[i] as Map<String, dynamic>;
-      final urlList = img['url_list'] as List?;
-      if (urlList == null || urlList.isEmpty) continue;
-      final filePath = await _downloadFile(
-          urlList.first.toString(), savePath, '${i + 1}.jpg');
-      if (filePath != null) count++;
-    }
-    return count > 0
-        ? {
-            'success': true,
-            'title': title,
-            'message': '图集已保存: $count/${images.length} 张'
+
+      // 抖音动图 (Live Photo) 含 video 字段，应下载为 mp4
+      String? primaryUrl;
+      String primaryExt = '.jpg';
+      final videoInfo = img['video'] as Map<String, dynamic>?;
+      if (videoInfo != null) {
+        final playAddr = videoInfo['play_addr'] as Map<String, dynamic>?;
+        if (playAddr != null) {
+          final urlList = playAddr['url_list'] as List?;
+          if (urlList != null && urlList.isNotEmpty) {
+            primaryUrl = urlList.first.toString();
+            primaryExt = '.mp4';
           }
+        }
+      }
+      if (primaryUrl == null) {
+        final urlList = img['url_list'] as List?;
+        if (urlList != null && urlList.isNotEmpty) {
+          primaryUrl = urlList.first.toString();
+        }
+      }
+      if (primaryUrl == null) continue;
+
+      final filePath = await _downloadFile(
+          primaryUrl, savePath, '${title}_${i + 1}$primaryExt');
+      if (filePath != null) {
+        count++;
+        if (primaryExt == '.mp4') videoCount++;
+      }
+    }
+    final msg = videoCount > 0
+        ? '$count 项 (含 $videoCount 个动图)'
+        : '$count/${images.length} 张图片';
+    return count > 0
+        ? {'success': true, 'title': title, 'message': '已保存: $msg'}
         : {'success': false, 'message': '图集下载失败'};
   }
 
@@ -240,21 +277,35 @@ class NativeDownloadService {
     final imageList = noteData['imageList'] as List? ?? [];
     final video = noteData['video'] as Map<String, dynamic>?;
 
+    // 构建作者目录
+    final author =
+        (noteData['user'] as Map<String, dynamic>?)?['nickname']?.toString() ??
+            '';
+    final authorDir = author.isNotEmpty
+        ? '$savePath/${author.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_').trim()}'
+        : savePath;
+    await Directory(authorDir).create(recursive: true);
+
     final safeTitle = title.replaceAll(RegExp(r'[\\/:*?"<>|\n\r]'), '_').trim();
-    final truncatedTitle = safeTitle.substring(0, min(50, safeTitle.length));
+    final namePrefix = (author.isNotEmpty ? '${author}_' : '') + safeTitle;
+    final fileBaseName = namePrefix.substring(0, min(60, namePrefix.length));
 
     if (noteType == 'video' && video != null) {
       final videoUrl = _extractXhsVideoUrl(video);
       if (videoUrl.isNotEmpty) {
         final filePath =
-            await _downloadFile(videoUrl, savePath, '$truncatedTitle.mp4');
+            await _downloadFile(videoUrl, authorDir, '$fileBaseName.mp4');
         if (filePath != null)
-          return {'success': true, 'title': title, 'path': filePath};
+          return {
+            'success': true,
+            'title': title,
+            'path': filePath,
+            'author': author
+          };
       }
     }
 
     if (imageList.isNotEmpty) {
-      await Directory(savePath).create(recursive: true);
       int count = 0;
       for (var i = 0; i < imageList.length; i++) {
         final img = imageList[i] as Map<String, dynamic>?;
@@ -263,7 +314,7 @@ class NativeDownloadService {
             img['urlDefault']?.toString() ?? img['url']?.toString() ?? '';
         if (imgUrl.isEmpty) continue;
         final fp = await _downloadFile(
-            imgUrl, savePath, '${truncatedTitle}_${i + 1}.jpg');
+            imgUrl, authorDir, '${fileBaseName}_${i + 1}.jpg');
         if (fp != null) count++;
       }
       return count > 0
@@ -316,17 +367,36 @@ class NativeDownloadService {
       String url, String savePath, String filename) async {
     try {
       await Directory(savePath).create(recursive: true);
-      final filePath = '$savePath/$filename';
       final uri = Uri.parse(url);
       final req = await _client.getUrl(uri);
       req.headers.set('User-Agent', _pcUA);
+      req.headers.set('Range', 'bytes=0-');
       req.headers.set(
           'Referer',
           url.contains('xhscdn.com') || url.contains('xiaohongshu')
               ? _xhsReferer
               : _douyinReferer);
+
       final resp = await req.close();
       if (resp.statusCode != 200 && resp.statusCode != 206) return null;
+
+      // 根据实际 content-type 修正文件扩展名
+      final ct = (resp.headers.value('content-type') ?? '').toLowerCase();
+      String ext = filename.contains('.') ? '.${filename.split('.').last}' : '';
+      if (ext.isEmpty || !ext.startsWith('.')) {
+        if (ct.contains('video'))
+          ext = '.mp4';
+        else if (ct.contains('image'))
+          ext = '.jpg';
+        else
+          ext = '.bin';
+      }
+
+      final baseName = filename.contains('.')
+          ? filename.substring(0, filename.lastIndexOf('.'))
+          : filename;
+      final safeName = '$baseName$ext';
+      final filePath = '$savePath/$safeName';
 
       final file = File(filePath);
       final sink = file.openWrite();

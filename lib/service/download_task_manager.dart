@@ -3,7 +3,7 @@ import 'package:flutter/foundation.dart';
 import '../model/download_task.dart';
 import 'database_service.dart';
 
-/// 下载任务管理器，对应原项目 DownloadTaskManager
+/// 下载任务管理器
 /// 使用 ChangeNotifier 实现响应式状态管理
 class DownloadTaskManager extends ChangeNotifier {
   static final DownloadTaskManager _instance = DownloadTaskManager._internal();
@@ -11,10 +11,10 @@ class DownloadTaskManager extends ChangeNotifier {
   DownloadTaskManager._internal();
 
   final DatabaseService _db = DatabaseService();
-  List<DownloadTask> _tasks = [];
+  final List<DownloadTask> _tasks = [];
   bool _initialized = false;
 
-  List<DownloadTask> get tasks => List.unmodifiable(_tasks);
+  List<DownloadTask> get tasks => List<DownloadTask>.from(_tasks);
   List<DownloadTask> get downloadingTasks =>
       _tasks.where((t) => t.status == TaskStatus.downloading).toList();
   List<DownloadTask> get completedTasks =>
@@ -26,13 +26,17 @@ class DownloadTaskManager extends ChangeNotifier {
   Future<void> init() async {
     if (_initialized) return;
     _initialized = true;
-    _tasks = await _db.getAllTasks();
+    final loaded = await _db.getAllTasks();
+    _tasks
+      ..clear()
+      ..addAll(loaded);
     notifyListeners();
   }
 
   /// 添加任务
   Future<void> addTask(DownloadTask task) async {
     await _db.insert(task);
+    _tasks.removeWhere((t) => t.id == task.id);
     _tasks.insert(0, task);
     notifyListeners();
   }
@@ -47,7 +51,7 @@ class DownloadTaskManager extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// 更新进度（轻量级，适合频繁调用）
+  /// 更新进度
   Future<void> updateProgress(
     String id,
     int downloadedSize,
@@ -82,20 +86,14 @@ class DownloadTaskManager extends ChangeNotifier {
 
   /// 根据ID获取任务
   DownloadTask? getById(String id) {
-    try {
-      return _tasks.firstWhere((t) => t.id == id);
-    } catch (_) {
-      return null;
-    }
+    final index = _tasks.indexWhere((t) => t.id == id);
+    return index >= 0 ? _tasks[index] : null;
   }
 
   /// 根据URL查找任务
   DownloadTask? findByUrl(String url) {
-    try {
-      return _tasks.firstWhere((t) => t.url == url);
-    } catch (_) {
-      return null;
-    }
+    final index = _tasks.indexWhere((t) => t.url == url);
+    return index >= 0 ? _tasks[index] : null;
   }
 
   /// 递增重试次数
@@ -103,9 +101,8 @@ class DownloadTaskManager extends ChangeNotifier {
     await _db.incrementRetry(id);
     final index = _tasks.indexWhere((t) => t.id == id);
     if (index >= 0) {
-      _tasks[index] = _tasks[index].copyWith(
-        retryCount: _tasks[index].retryCount + 1,
-      );
+      _tasks[index] =
+          _tasks[index].copyWith(retryCount: _tasks[index].retryCount + 1);
     }
     notifyListeners();
   }
@@ -113,7 +110,10 @@ class DownloadTaskManager extends ChangeNotifier {
   /// 清理旧任务
   Future<void> cleanupOldTasks({int daysToKeep = 30}) async {
     await _db.cleanupOldTasks(daysToKeep: daysToKeep);
-    _tasks = await _db.getAllTasks();
+    final loaded = await _db.getAllTasks();
+    _tasks
+      ..clear()
+      ..addAll(loaded);
     notifyListeners();
   }
 }

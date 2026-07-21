@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import '../../platform/douyin/douyin_bridge.dart';
 import '../../platform/xhs/xhs_bridge.dart';
 import '../../service/cookie_store.dart';
+import '../../service/gallery_service.dart';
 
 /// 下载页面 - 完全复刻原项目 DownloadScreen
 /// 链接输入框 + 从剪贴板粘贴按钮 + 工具卡片列表
@@ -105,7 +106,11 @@ class _DownloadScreenState extends State<DownloadScreen> {
     }
     if (result['success'] == true) {
       final path = result['path'] ?? savePath;
-      _showSnackBar('下载成功', '${result['title'] ?? ''}\n保存到: $path');
+      // 自动保存到相册
+      await GalleryService.instance.requestPermission();
+      final saved = await GalleryService.instance.saveToGallery(path);
+      final albumMsg = saved ? '已保存到相册' : '相册保存跳过';
+      _showSnackBar('下载成功', '${result['title'] ?? ''}\n$albumMsg');
     } else {
       _showSnackBar('下载失败', result['message'] ?? '未知错误');
     }
@@ -174,113 +179,124 @@ class _DownloadScreenState extends State<DownloadScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          // 链接输入框 - 对应原项目 OutlinedTextField
-          TextField(
-            controller: _linkController,
-            maxLines: 3,
-            minLines: 2,
-            decoration: InputDecoration(
-              hintText: '粘贴${widget.platformName}链接',
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(16),
-              ),
-              suffixIcon: _linkController.text.isNotEmpty
-                  ? IconButton(
-                      icon: const Icon(Icons.clear),
-                      onPressed: () {
-                        setState(() {
-                          _linkController.clear();
-                          _errorMessage = null;
-                        });
-                      },
-                    )
-                  : null,
-              errorText: _errorMessage,
-            ),
-            onChanged: (_) => setState(() => _errorMessage = null),
-          ),
-          const SizedBox(height: 8),
-
-          // 从剪贴板粘贴按钮
-          SizedBox(
-            height: 44,
-            child: FilledButton(
-              onPressed: _pasteFromClipboard,
-              style: FilledButton.styleFrom(
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
+    return KeyboardListener(
+      focusNode: FocusNode()..requestFocus(),
+      onKeyEvent: (event) {
+        if (event is KeyDownEvent &&
+            HardwareKeyboard.instance.isControlPressed &&
+            event.logicalKey == LogicalKeyboardKey.keyV) {
+          _pasteFromClipboard();
+        }
+      },
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // 链接输入框 - 对应原项目 OutlinedTextField
+            TextField(
+              controller: _linkController,
+              maxLines: 3,
+              minLines: 2,
+              decoration: InputDecoration(
+                hintText: '粘贴${widget.platformName}链接',
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(16),
                 ),
+                suffixIcon: _linkController.text.isNotEmpty
+                    ? IconButton(
+                        icon: const Icon(Icons.clear),
+                        onPressed: () {
+                          setState(() {
+                            _linkController.clear();
+                            _errorMessage = null;
+                          });
+                        },
+                      )
+                    : null,
+                errorText: _errorMessage,
               ),
-              child: const Text('从剪贴板粘贴'),
+              onChanged: (_) => setState(() => _errorMessage = null),
             ),
-          ),
+            const SizedBox(height: 8),
 
-          const SizedBox(height: 24),
-
-          // 工具箱标题
-          Text(
-            '工具箱',
-            style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+            // 从剪贴板粘贴按钮
+            SizedBox(
+              height: 44,
+              child: FilledButton(
+                onPressed: _pasteFromClipboard,
+                style: FilledButton.styleFrom(
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                 ),
-          ),
-          const SizedBox(height: 8),
+                child: const Text('从剪贴板粘贴'),
+              ),
+            ),
 
-          // 工具卡片列表 - 对应原项目 ToolCard
-          _ToolCard(
-            title: '下载作品',
-            desc: '下载视频/图集/实况',
-            onTap: () => _requireLink(_parseAndDownload),
-          ),
-          _ToolCard(
-            title: '查看作者作品',
-            desc: '列出作者全部作品，点击可选链接',
-            onTap: () => _requireLink(_detectLinkInfo),
-          ),
-          _ToolCard(
-            title: '批量下载账号',
-            desc: '下载账号全部作品',
-            onTap: () => _requireLink(_batchDownloadAccount),
-          ),
-          _ToolCard(
-            title: '批量下载合集',
-            desc: '下载合集全部作品',
-            onTap: () => _requireLink(_batchDownloadMixOrCollection),
-          ),
-          _ToolCard(title: '收藏夹', desc: '下载收藏夹内容', onTap: _showCollectFolders),
-          if (widget.platformId != 'xhs') ...[
+            const SizedBox(height: 24),
+
+            // 工具箱标题
+            Text(
+              '工具箱',
+              style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+            ),
+            const SizedBox(height: 8),
+
+            // 工具卡片列表 - 对应原项目 ToolCard
             _ToolCard(
-              title: '直播录制',
-              desc: '录制抖音直播',
-              onTap: () => _requireLink(_recordLive),
+              title: '下载作品',
+              desc: '下载视频/图集/实况',
+              onTap: () => _requireLink(_parseAndDownload),
             ),
             _ToolCard(
-              title: '采集评论',
-              desc: '导出评论为CSV',
-              onTap: () => _requireLink(_scrapeComments),
+              title: '查看作者作品',
+              desc: '列出作者全部作品，点击可选链接',
+              onTap: () => _requireLink(_detectLinkInfo),
             ),
             _ToolCard(
-              title: '数据统计',
-              desc: '查看作品数据',
-              onTap: () => _requireLink(_getDataStats),
+              title: '批量下载账号',
+              desc: '下载账号全部作品',
+              onTap: () => _requireLink(_batchDownloadAccount),
             ),
             _ToolCard(
-              title: '重新下载',
-              desc: '从历史记录重新下载',
-              onTap: () => _showSnackBar('重新下载', '功能执行中...'),
+              title: '批量下载合集',
+              desc: '下载合集全部作品',
+              onTap: () => _requireLink(_batchDownloadMixOrCollection),
             ),
             _ToolCard(
-              title: '批量下载',
-              desc: '批量下载多个链接',
-              onTap: () => _requireLink(_batchDownload),
-            ),
+                title: '收藏夹', desc: '下载收藏夹内容', onTap: _showCollectFolders),
+            if (widget.platformId != 'xhs') ...[
+              _ToolCard(
+                title: '直播录制',
+                desc: '录制抖音直播',
+                onTap: () => _requireLink(_recordLive),
+              ),
+              _ToolCard(
+                title: '采集评论',
+                desc: '导出评论为CSV',
+                onTap: () => _requireLink(_scrapeComments),
+              ),
+              _ToolCard(
+                title: '数据统计',
+                desc: '查看作品数据',
+                onTap: () => _requireLink(_getDataStats),
+              ),
+              _ToolCard(
+                title: '重新下载',
+                desc: '从历史记录重新下载',
+                onTap: () => _showSnackBar('重新下载', '功能执行中...'),
+              ),
+              _ToolCard(
+                title: '批量下载',
+                desc: '批量下载多个链接',
+                onTap: () => _requireLink(_batchDownload),
+              ),
+            ],
           ],
-        ],
+        ),
       ),
     );
   }

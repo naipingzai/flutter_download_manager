@@ -49,6 +49,10 @@
 	</dict>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>下载的视频和图片需要保存到您的相册中</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>下载的视频和图片需要保存到您的相册中</string>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
 	<key>UIMainStoryboardFile</key>
