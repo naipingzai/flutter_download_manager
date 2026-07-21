@@ -13,82 +13,29 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: '17'
-
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-
       - name: Install Python dependencies
         run: pip install -r python/requirements.txt
-
-      - name: Install NDK
-        uses: nttld/setup-ndk@v1
-        with:
-          ndk-version: r26d
-
-      - name: Build C++ Python bridge (ARM64)
+      - name: Copy Python scripts to assets
         run: |
-          PYTHON_INCLUDE=$(python3 -c "import sysconfig; print(sysconfig.get_path('include'))")
-          PYTHON_LIB=$(python3 -c "import sysconfig; print(sysconfig.get_config_var('LIBDIR'))")
-          PYTHON_VER=$(python3 -c "import sysconfig; print(sysconfig.get_config_var('VERSION'))")
-          cd src
-          mkdir -p build-android-arm64
-          cd build-android-arm64
-          cmake .. \
-            -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake \
-            -DANDROID_ABI=arm64-v8a \
-            -DANDROID_PLATFORM=android-21 \
-            -DPython3_INCLUDE_DIRS="$PYTHON_INCLUDE" \
-            -DPython3_LIBRARIES="$PYTHON_LIB/libpython${PYTHON_VER}.so" \
-            -DCMAKE_BUILD_TYPE=Release
-          make -j$(nproc)
-
-      - name: Build C++ Python bridge (ARMv7)
-        run: |
-          PYTHON_INCLUDE=$(python3 -c "import sysconfig; print(sysconfig.get_path('include'))")
-          PYTHON_LIB=$(python3 -c "import sysconfig; print(sysconfig.get_config_var('LIBDIR'))")
-          PYTHON_VER=$(python3 -c "import sysconfig; print(sysconfig.get_config_var('VERSION'))")
-          cd src
-          mkdir -p build-android-armv7
-          cd build-android-armv7
-          cmake .. \
-            -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake \
-            -DANDROID_ABI=armeabi-v7a \
-            -DANDROID_PLATFORM=android-21 \
-            -DPython3_INCLUDE_DIRS="$PYTHON_INCLUDE" \
-            -DPython3_LIBRARIES="$PYTHON_LIB/libpython${PYTHON_VER}.so" \
-            -DCMAKE_BUILD_TYPE=Release
-          make -j$(nproc)
-
-      - name: Copy native libraries to Android
-        run: |
-          mkdir -p android/app/src/main/jniLibs/arm64-v8a
-          mkdir -p android/app/src/main/jniLibs/armeabi-v7a
-          cp src/build-android-arm64/libpython_bridge.so android/app/src/main/jniLibs/arm64-v8a/
-          cp src/build-android-armv7/libpython_bridge.so android/app/src/main/jniLibs/armeabi-v7a/
-          # 复制 Python 脚本到 assets
           mkdir -p android/app/src/main/assets/python
           cp python/*.py android/app/src/main/assets/python/
-
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.44.x'
           channel: 'stable'
-
       - name: Install Flutter dependencies
         run: flutter pub get
-
       - name: Analyze
         run: flutter analyze --no-fatal-infos
-
       - name: Build APK
         run: flutter build apk --release
-
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
@@ -100,55 +47,23 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
-
-      - name: Install Python with dev headers
+      - name: Copy Python scripts to iOS
         run: |
-          brew install python@3.12
-          pip3 install --break-system-packages -r python/requirements.txt
-
-      - name: Build C++ Python bridge for iOS (ARM64)
-        run: |
-          PYTHON_PREFIX=$(python3 -c "import sysconfig; print(sysconfig.get_config_var('prefix'))")
-          PYTHON_INCLUDE=$(python3 -c "import sysconfig; print(sysconfig.get_path('include'))")
-          PYTHON_LIB=$(python3 -c "import sysconfig; print(sysconfig.get_config_var('LIBDIR'))")
-          PYTHON_VER=$(python3 -c "import sysconfig; print(sysconfig.get_config_var('VERSION'))")
-          cd src
-          mkdir -p build-ios-arm64
-          cd build-ios-arm64
-          cmake .. \
-            -DCMAKE_SYSTEM_NAME=iOS \
-            -DCMAKE_OSX_ARCHITECTURES=arm64 \
-            -DCMAKE_OSX_DEPLOYMENT_TARGET=13.0 \
-            -DPython3_INCLUDE_DIRS="$PYTHON_INCLUDE" \
-            -DPython3_LIBRARIES="$PYTHON_LIB/libpython${PYTHON_VER}.dylib" \
-            -DCMAKE_BUILD_TYPE=Release
-          make -j$(sysctl -n hw.ncpu)
-
-      - name: Copy native libraries to iOS
-        run: |
-          cp src/build-ios-arm64/libpython_bridge.a ios/
-          # 复制 Python 脚本
           mkdir -p ios/Runner/python
           cp python/*.py ios/Runner/python/
-
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.44.x'
           channel: 'stable'
-
       - name: Install Flutter dependencies
         run: flutter pub get
-
       - name: Build iOS (no codesign)
-        run: |
-          flutter build ios --release --no-codesign
-
-      - name: Create IPA directory
+        run: flutter build ios --release --no-codesign
+      - name: Create IPA
         run: |
           mkdir -p Payload
           cp -r build/ios/iphoneos/Runner.app Payload/
           zip -r flutter_download_manager.ipa Payload
-
       - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
@@ -160,34 +75,26 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-
       - name: Install Python dependencies
         run: pip install -r python/requirements.txt
-
       - name: Build C++ Python bridge for Linux
         run: |
           cd src && mkdir -p build && cd build
           cmake .. -DCMAKE_BUILD_TYPE=Release
           make -j$(nproc)
-
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.44.x'
           channel: 'stable'
-
       - name: Install Flutter dependencies
         run: flutter pub get
-
       - name: Analyze
         run: flutter analyze --no-fatal-infos
-
       - name: Build Linux
         run: flutter build linux --release
-
       - name: Upload Linux bundle
         uses: actions/upload-artifact@v4
         with:
