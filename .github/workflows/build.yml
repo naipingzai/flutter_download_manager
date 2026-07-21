@@ -78,6 +78,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libsqlite3-dev
       - name: Install Python dependencies
         run: pip install -r python/requirements.txt
       - name: Build C++ Python bridge for Linux
