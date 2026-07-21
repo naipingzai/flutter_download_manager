@@ -93,15 +93,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-
-      - name: Install Python dependencies
-        run: pip install -r python/requirements.txt
+      - name: Install Python with dev headers
+        run: |
+          brew install python@3.12
+          pip3 install -r python/requirements.txt
 
       - name: Build C++ Python bridge for iOS (ARM64)
         run: |
+          PYTHON_PREFIX=$(python3 -c "import sysconfig; print(sysconfig.get_config_var('prefix'))")
+          PYTHON_INCLUDE=$(python3 -c "import sysconfig; print(sysconfig.get_path('include'))")
+          PYTHON_LIB=$(python3 -c "import sysconfig; print(sysconfig.get_config_var('LIBDIR'))")
+          PYTHON_VER=$(python3 -c "import sysconfig; print(sysconfig.get_config_var('VERSION'))")
           cd src
           mkdir -p build-ios-arm64
           cd build-ios-arm64
@@ -109,7 +111,8 @@ jobs:
             -DCMAKE_SYSTEM_NAME=iOS \
             -DCMAKE_OSX_ARCHITECTURES=arm64 \
             -DCMAKE_OSX_DEPLOYMENT_TARGET=13.0 \
-            -DPython3_ROOT_DIR=$(python3 -c "import sys; print(sys.prefix)") \
+            -DPython3_INCLUDE_DIRS="$PYTHON_INCLUDE" \
+            -DPython3_LIBRARIES="$PYTHON_LIB/libpython${PYTHON_VER}.dylib" \
             -DCMAKE_BUILD_TYPE=Release
           make -j$(sysctl -n hw.ncpu)
 
