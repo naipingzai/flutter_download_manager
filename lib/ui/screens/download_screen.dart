@@ -59,17 +59,16 @@ class _DownloadScreenState extends State<DownloadScreen> {
     );
   }
 
-  Future<bool> _syncCookie() async {
+  Future<void> _syncCookie() async {
     final store = CookieStore(platform: widget.platformId);
     await store.load();
     final cookie = store.getActiveCookie();
-    if (cookie == null || cookie.isEmpty) return false;
+    if (cookie == null || cookie.isEmpty) return;
     if (widget.platformId == 'xhs') {
       XhsBridge.setCookie(cookie);
     } else {
       DouyinBridge.setCookie(cookie);
     }
-    return true;
   }
 
   void _requireLink(void Function(String url) block) async {
@@ -78,13 +77,7 @@ class _DownloadScreenState extends State<DownloadScreen> {
       _showSnackBar('${widget.platformName}下载', '请先输入链接');
       return;
     }
-    if (!await _syncCookie()) {
-      _showSnackBar(
-        '${widget.platformName}下载',
-        '请先在设置中配置${widget.platformName}Cookie',
-      );
-      return;
-    }
+    await _syncCookie();
     block(url);
   }
 
@@ -118,12 +111,12 @@ class _DownloadScreenState extends State<DownloadScreen> {
     }
   }
 
-  Future<void> _detectLinkInfo(String url) async {
+  void _detectLinkInfo(String url) {
     final String result;
     if (widget.platformId == 'xhs') {
-      result = await XhsBridge.detectLinkInfo(url);
+      result = XhsBridge.detectLinkInfo(url);
     } else {
-      result = await DouyinBridge.detectLinkInfo(url);
+      result = DouyinBridge.detectLinkInfo(url);
     }
     _showSnackBar(
       '检测结果',
@@ -139,11 +132,8 @@ class _DownloadScreenState extends State<DownloadScreen> {
     _showSnackBar('批量下载合集', '功能执行中...');
   }
 
-  void _showCollectFolders() async {
-    if (!await _syncCookie()) {
-      _showSnackBar('收藏夹', '请先在设置中配置Cookie');
-      return;
-    }
+  void _showCollectFolders() {
+    _syncCookie();
     _showSnackBar('收藏夹', '功能执行中...');
   }
 
@@ -167,7 +157,7 @@ class _DownloadScreenState extends State<DownloadScreen> {
     if (widget.platformId == 'xhs') {
       _showSnackBar('数据统计', '小红书暂不支持');
     } else {
-      DouyinBridge.getDataStats(url).then((s) => _showSnackBar('数据统计', s));
+      _showSnackBar('数据统计', DouyinBridge.getDataStats(url));
     }
   }
 

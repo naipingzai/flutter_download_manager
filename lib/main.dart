@@ -2,10 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'dart:io';
-import 'framework/plugin_registry.dart';
 import 'service/python_service.dart';
-import 'platform/douyin/douyin_plugin.dart';
-import 'platform/xhs/xhs_plugin.dart';
 import 'service/download_task_manager.dart';
 import 'ui/theme/app_theme.dart';
 import 'ui/screens/home_screen.dart';
@@ -18,10 +15,6 @@ void main() async {
     sqfliteFfiInit();
     databaseFactory = databaseFactoryFfi;
   }
-
-  final registry = PluginRegistry();
-  registry.register(DouyinPlugin());
-  registry.register(XhsPlugin());
 
   final taskManager = DownloadTaskManager();
   await taskManager.init();
