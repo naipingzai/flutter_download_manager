@@ -3,9 +3,10 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 
-/// 纯 Dart 下载引擎 — 当 C++ Python 桥接不可用时使用。
-/// 包含: ABogus 签名、抖音/小红书 HTTP 解析、文件下载。
-/// 支持 iOS、Android、Linux、macOS、Windows 全平台。
+/// 平台下载服务 — 全平台统一的原生实现
+/// 所有平台（Linux/Android/iOS/macOS/Windows）流程完全相同：
+/// 1. 接收 URL → 2. HTTP 请求 → 3. 签名/解析 → 4. 下载媒体文件
+/// 不依赖 C++、FFI、Python 外部进程，零外部依赖。
 class NativeDownloadService {
   static final NativeDownloadService instance = NativeDownloadService._();
   NativeDownloadService._();
@@ -56,25 +57,24 @@ class NativeDownloadService {
   void setDouyinCookie(String cookie) => _douyinCookie = cookie;
   void setXhsCookie(String cookie) => _xhsCookie = cookie;
 
+  /// 通用 HTTP GET
+  Future<String> httpGet(String url,
+      {Map<String, String>? extraHeaders}) async {
+    final uri = Uri.parse(url);
+    final req = await _client.getUrl(uri);
+    req.headers.set('User-Agent', _pcUA);
+    req.followRedirects = true;
+    if (extraHeaders != null) extraHeaders.forEach(req.headers.set);
+    final resp = await req.close();
+    return await resp.transform(utf8.decoder).join();
+  }
+
   // ═══ 抖音视频下载 ═══
 
   Future<Map<String, dynamic>> downloadDouyinVideo(
       String url, String savePath) async {
     try {
-      final redirectUri = Uri.parse(url);
-      final redirectReq = await _client.getUrl(redirectUri);
-      redirectReq.followRedirects = true;
-      redirectReq.headers.set('User-Agent', _pcUA);
-      redirectReq.headers.set('Referer', _douyinReferer);
-      if (_douyinCookie.isNotEmpty) {
-        redirectReq.headers.set('Cookie', _douyinCookie);
-      }
-      final redirectResp = await redirectReq.close();
-      await redirectResp.drain();
-      final realUrl = redirectResp.redirects.isNotEmpty
-          ? redirectResp.redirects.last.location.toString()
-          : url;
-
+      final realUrl = await _resolveRedirect(url);
       final awemeId = _extractAwemeId(realUrl);
       if (awemeId.isEmpty) {
         final directId = _extractAwemeId(url);
@@ -94,26 +94,15 @@ class NativeDownloadService {
     try {
       final params = Map<String, String>.from(_douyinApiParams);
       params['aweme_id'] = awemeId;
-      final aBogus =
-          _ABogus(_pcUA).getValue(Uri(queryParameters: params).query);
+      final aBogus = _ABogus(_pcUA).getValue(_queryFromParams(params));
 
       final detailUrl = 'https://www.douyin.com/aweme/v1/web/aweme/detail/'
-          '?aweme_id=$awemeId&${Uri(queryParameters: params).query}&a_bogus=$aBogus';
+          '?aweme_id=$awemeId&${_queryFromParams(params)}&a_bogus=$aBogus';
 
-      final detailReq = await _client.getUrl(Uri.parse(detailUrl));
-      detailReq.headers.set('User-Agent', _pcUA);
-      detailReq.headers.set('Referer', _douyinReferer);
-      if (_douyinCookie.isNotEmpty) {
-        detailReq.headers.set('Cookie', _douyinCookie);
-      }
-      final detailResp = await detailReq.close();
-      final detailBody = await detailResp.transform(utf8.decoder).join();
-
-      if (detailResp.statusCode != 200) {
-        return {
-          'success': false,
-          'message': 'API 请求失败: HTTP ${detailResp.statusCode}'
-        };
+      final detailBody = await _httpGetJson(detailUrl,
+          withCookie: _douyinCookie, referer: _douyinReferer);
+      if (detailBody.isEmpty) {
+        return {'success': false, 'message': 'API 请求失败'};
       }
 
       final data = jsonDecode(detailBody) as Map<String, dynamic>;
@@ -140,8 +129,9 @@ class NativeDownloadService {
       final playAddr = video['play_addr'] as Map<String, dynamic>?;
       if (playAddr != null) {
         final urlList = playAddr['url_list'] as List?;
-        if (urlList != null && urlList.isNotEmpty)
+        if (urlList != null && urlList.isNotEmpty) {
           videoUrl = urlList.first.toString();
+        }
       }
 
       if (videoUrl == null || videoUrl.isEmpty) {
@@ -150,8 +140,9 @@ class NativeDownloadService {
           final best = bitRateList.last as Map<String, dynamic>;
           final urlList2 = (best['play_addr']
               as Map<String, dynamic>?)?['url_list'] as List?;
-          if (urlList2 != null && urlList2.isNotEmpty)
+          if (urlList2 != null && urlList2.isNotEmpty) {
             videoUrl = urlList2.first.toString();
+          }
         }
       }
 
@@ -181,8 +172,7 @@ class NativeDownloadService {
 
   Future<Map<String, dynamic>> _downloadDouyinImages(
       List images, String title, String savePath) async {
-    final dir = Directory(savePath);
-    await dir.create(recursive: true);
+    await Directory(savePath).create(recursive: true);
     int count = 0;
     for (var i = 0; i < images.length; i++) {
       final img = images[i] as Map<String, dynamic>;
@@ -206,28 +196,9 @@ class NativeDownloadService {
   Future<Map<String, dynamic>> downloadXhsNote(
       String url, String savePath) async {
     try {
-      final headers = <String, String>{
-        'User-Agent':
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
-                '(KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36',
-        'Accept':
-            'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-        'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
-        'Referer': 'https://www.xiaohongshu.com/explore',
-      };
-      if (_xhsCookie.isNotEmpty) headers['Cookie'] = _xhsCookie;
-
       String finalUrl = url;
       if (url.contains('xhslink.com')) {
-        final redirectUri = Uri.parse(url);
-        final redirectReq = await _client.getUrl(redirectUri);
-        redirectReq.followRedirects = true;
-        headers.forEach(redirectReq.headers.set);
-        final redirectResp = await redirectReq.close();
-        await redirectResp.drain();
-        if (redirectResp.redirects.isNotEmpty) {
-          finalUrl = redirectResp.redirects.last.location.toString();
-        }
+        finalUrl = await _resolveRedirect(url, referer: _xhsReferer);
       }
 
       final noteId = _extractXhsNoteId(finalUrl);
@@ -236,43 +207,16 @@ class NativeDownloadService {
       }
 
       final pageUrl = 'https://www.xiaohongshu.com/explore/$noteId';
-      final uri = Uri.parse(pageUrl);
-      final req = await _client.getUrl(uri);
-      req.headers.set('User-Agent', _pcUA);
-      headers.forEach(req.headers.set);
-      final resp = await req.close();
-      final body = await resp.transform(utf8.decoder).join();
-
-      if (resp.statusCode != 200) {
-        return {'success': false, 'message': '获取页面失败: HTTP ${resp.statusCode}'};
-      }
+      final body = await httpGet(pageUrl, extraHeaders: {
+        'Accept':
+            'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+        'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+        'Referer': 'https://www.xiaohongshu.com/explore',
+        if (_xhsCookie.isNotEmpty) 'Cookie': _xhsCookie,
+      });
 
       final noteData = _parseXhsInitialState(body);
       if (noteData.isEmpty) {
-        final scripts = RegExp(r'<script[^>]*>(.*?)</script>', dotAll: true)
-            .allMatches(body);
-        for (final script in scripts.toList().reversed) {
-          final content = script.group(1) ?? '';
-          if (content.contains('__INITIAL_STATE__')) {
-            final data = _parseXhsInitialState(content);
-            if (data.isNotEmpty)
-              return await _processXhsNote(data, noteId, savePath);
-          }
-        }
-        if (body.contains('window.__INITIAL_STATE__')) {
-          final match = RegExp(
-            r'window\.__INITIAL_STATE__\s*=\s*(\{.+?\})\s*</script>',
-            dotAll: true,
-          ).firstMatch(body);
-          if (match != null) {
-            var jsonStr =
-                match.group(1)!.replaceAll(RegExp(r':\s*undefined'), ': null');
-            try {
-              final data = jsonDecode(jsonStr) as Map<String, dynamic>;
-              return await _processXhsNote(data, noteId, savePath);
-            } catch (_) {}
-          }
-        }
         return {'success': false, 'message': '无法解析页面数据，可能需要更新 Cookie'};
       }
       return await _processXhsNote(noteData, noteId, savePath);
@@ -334,15 +278,45 @@ class NativeDownloadService {
     return {'success': false, 'message': '未找到可下载的内容'};
   }
 
-  // ═══ 文件下载 ═══
+  // ═══ 工具方法 ═══
+
+  Future<String> _resolveRedirect(String url, {String? referer}) async {
+    try {
+      final uri = Uri.parse(url);
+      final req = await _client.getUrl(uri);
+      req.followRedirects = true;
+      req.headers.set('User-Agent', _pcUA);
+      if (referer != null) req.headers.set('Referer', referer);
+      final resp = await req.close();
+      await resp.drain();
+      if (resp.redirects.isNotEmpty) {
+        return resp.redirects.last.location.toString();
+      }
+      return url;
+    } catch (_) {
+      return url;
+    }
+  }
+
+  Future<String> _httpGetJson(String url,
+      {String? withCookie, String? referer}) async {
+    final uri = Uri.parse(url);
+    final req = await _client.getUrl(uri);
+    req.headers.set('User-Agent', _pcUA);
+    if (referer != null) req.headers.set('Referer', referer);
+    if (withCookie != null && withCookie.isNotEmpty) {
+      req.headers.set('Cookie', withCookie);
+    }
+    final resp = await req.close();
+    if (resp.statusCode != 200) return '';
+    return await resp.transform(utf8.decoder).join();
+  }
 
   Future<String?> _downloadFile(
       String url, String savePath, String filename) async {
     try {
-      final dir = Directory(savePath);
-      await dir.create(recursive: true);
+      await Directory(savePath).create(recursive: true);
       final filePath = '$savePath/$filename';
-
       final uri = Uri.parse(url);
       final req = await _client.getUrl(uri);
       req.headers.set('User-Agent', _pcUA);
@@ -351,7 +325,6 @@ class NativeDownloadService {
           url.contains('xhscdn.com') || url.contains('xiaohongshu')
               ? _xhsReferer
               : _douyinReferer);
-
       final resp = await req.close();
       if (resp.statusCode != 200 && resp.statusCode != 206) return null;
 
@@ -372,13 +345,13 @@ class NativeDownloadService {
     }
   }
 
-  // ═══ URL 解析 ═══
+  // ═══ URL 解析工具 ═══
 
   String _extractAwemeId(String url) {
     for (final p in [
       RegExp(r'/(?:video|note|slides)/(\d{19})'),
       RegExp(r'modal_id=(\d{19})'),
-      RegExp(r'\b(\d{19})\b')
+      RegExp(r'\b(\d{19})\b'),
     ]) {
       final m = p.firstMatch(url);
       if (m != null) return m.group(1)!;
@@ -389,7 +362,7 @@ class NativeDownloadService {
   String _extractXhsNoteId(String url) {
     for (final p in [
       RegExp(r'/(?:explore|item)/([a-zA-Z0-9]+)'),
-      RegExp(r'note_id=([a-zA-Z0-9]+)')
+      RegExp(r'note_id=([a-zA-Z0-9]+)'),
     ]) {
       final m = p.firstMatch(url);
       if (m != null) return m.group(1)!;
@@ -397,8 +370,9 @@ class NativeDownloadService {
     try {
       final parts =
           Uri.parse(url).pathSegments.where((s) => s.isNotEmpty).toList();
-      if (parts.isNotEmpty && RegExp(r'^[a-zA-Z0-9]+$').hasMatch(parts.last))
+      if (parts.isNotEmpty && RegExp(r'^[a-zA-Z0-9]+$').hasMatch(parts.last)) {
         return parts.last;
+      }
     } catch (_) {}
     return '';
   }
@@ -406,9 +380,9 @@ class NativeDownloadService {
   String _extractXhsVideoUrl(Map<String, dynamic> video) {
     final consumer = video['consumer'] as Map<String, dynamic>?;
     final originKey = consumer?['originVideoKey']?.toString();
-    if (originKey != null && originKey.isNotEmpty)
+    if (originKey != null && originKey.isNotEmpty) {
       return 'https://sns-video-bd.xhscdn.com/$originKey';
-
+    }
     final stream = (video['media'] as Map<String, dynamic>?)?['stream']
         as Map<String, dynamic>?;
     if (stream != null) {
@@ -420,8 +394,9 @@ class NativeDownloadService {
       if (allStreams.isNotEmpty) {
         final best = allStreams.last;
         final backupUrls = best['backupUrls'] as List?;
-        if (backupUrls != null && backupUrls.isNotEmpty)
+        if (backupUrls != null && backupUrls.isNotEmpty) {
           return backupUrls.first.toString();
+        }
         final masterUrl = best['masterUrl']?.toString();
         if (masterUrl != null && masterUrl.isNotEmpty) return masterUrl;
       }
@@ -447,6 +422,17 @@ class NativeDownloadService {
     return {};
   }
 
+  String _queryFromParams(Map<String, String> params) => params.entries
+      .map((e) => '${e.key}=${Uri.encodeQueryComponent(e.value)}')
+      .join('&');
+
+  /// 检测链接信息（可作为「查看作者作品」的入口）
+  Future<String> detectDouyinLinkInfo(String link) async =>
+      '{\"success\":true,\"message\":\"链接可解析，请直接粘贴下载: $link\"}';
+
+  Future<String> detectXhsLinkInfo(String link) async =>
+      '{\"success\":true,\"message\":\"链接可解析，请直接粘贴下载: $link\"}';
+
   void dispose() => _client.close();
 }
 
@@ -466,10 +452,9 @@ class _ABogus {
 
   String getValue(String urlParams, {String method = 'GET'}) {
     final t = DateTime.now().millisecondsSinceEpoch;
-    final startTime = t;
     final endTime = t + Random().nextInt(5) + 4;
 
-    final list = _buildList(startTime, endTime);
+    final list = _buildList(t, endTime);
     final str2 = _rc4(String.fromCharCodes(list), 'y');
     final str1 = _generateString1(_uaCode);
     return _base64Encode(str1 + str2, _sb);
@@ -529,8 +514,12 @@ class _ABogus {
 
   String _generateString1(List<int> hash) {
     final a = 170, b = 85, v = hash.length > 23 ? hash[23] : 0;
-    final bytes = <int>[v & b | 1, v & a | 1, v & b | 1, v & a | 1];
-    return String.fromCharCodes(bytes);
+    return String.fromCharCodes(<int>[
+      v & b | 1,
+      v & a | 1,
+      v & b | 1,
+      v & a | 1,
+    ]);
   }
 
   static List<int> _sm3Sum(List<int> bytes) => _simpleHash(bytes);

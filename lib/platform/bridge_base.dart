@@ -3,19 +3,14 @@ import 'dart:convert';
 import 'package:uuid/uuid.dart';
 import '../model/download_task.dart';
 import '../service/download_task_manager.dart';
-import '../service/python_service.dart';
 import '../service/native_download_service.dart';
 
-/// 平台 Bridge 基类，提取 DouyinBridge / XhsBridge 的公共逻辑
-/// 下载策略: Python C++ 桥接优先，纯 Dart 引擎作为全平台回退
+/// 平台 Bridge 基类 — 全平台统一调用 NativeDownloadService
+/// 所有平台（Linux/Android/iOS/macOS/Windows）流程完全相同：
+/// 1. 创建 DownloadTask → 2. 调用 NativeDownloadService → 3. 更新任务状态
 abstract class BridgeBase {
   static const _uuid = Uuid();
   static final DownloadTaskManager _taskManager = DownloadTaskManager();
-  static final PythonService _python = PythonService.instance;
-  static final NativeDownloadService _native = NativeDownloadService.instance;
-
-  /// Python 桥接是否可用
-  static bool get usePython => _python.isReady;
 
   /// 创建下载任务并执行操作
   static Future<Map<String, dynamic>> executeTask({
@@ -63,16 +58,6 @@ abstract class BridgeBase {
     }
   }
 
-  /// Python 调用包装
-  static Map<String, dynamic> callPython(
-    String module,
-    String function,
-    List<dynamic> args,
-  ) {
-    final resultStr = _python.callFunction(module, function, jsonEncode(args));
-    return jsonDecode(resultStr) as Map<String, dynamic>;
-  }
-
-  /// 纯 Dart 下载引擎引用
-  static NativeDownloadService get native => _native;
+  /// 同步结果转 JSON（用于 detect/getStats 这类不需要等待的接口）
+  static String toJsonString(Map<String, dynamic> data) => jsonEncode(data);
 }

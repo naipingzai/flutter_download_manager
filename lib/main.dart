@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'dart:io';
-import 'service/python_service.dart';
 import 'service/download_task_manager.dart';
 import 'ui/theme/app_theme.dart';
 import 'ui/screens/home_screen.dart';
@@ -18,9 +17,6 @@ void main() async {
 
   final taskManager = DownloadTaskManager();
   await taskManager.init();
-
-  // 初始化 Python Runner
-  await PythonService.instance.init();
 
   runApp(
     ChangeNotifierProvider.value(
