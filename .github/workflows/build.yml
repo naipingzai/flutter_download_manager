@@ -53,8 +53,8 @@ jobs:
           channel: 'stable'
       - name: Install Flutter dependencies
         run: flutter pub get
-      - name: Build iOS for simulator
-        run: flutter build ios --simulator --release
+      - name: Build iOS for simulator (debug)
+        run: flutter build ios --simulator --debug
 
   build-linux:
     name: Build Linux
