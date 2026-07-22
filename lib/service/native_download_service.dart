@@ -17,6 +17,12 @@ class NativeDownloadService {
   String _douyinCookie = '';
   String _xhsCookie = '';
 
+  // 任务取消控制
+  final Map<String, bool> _cancelled = {};
+  void cancelTask(String id) => _cancelled[id] = true;
+  void uncancelTask(String id) => _cancelled.remove(id);
+  bool isCancelled(String id) => _cancelled[id] == true;
+
   static const _pcUA =
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
       '(KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36';
