@@ -28,6 +28,7 @@ class DownloadScreen extends StatefulWidget {
 class _DownloadScreenState extends State<DownloadScreen> {
   final TextEditingController _linkController = TextEditingController();
   String? _errorMessage;
+  bool _isDownloading = false;
 
   @override
   void initState() {
@@ -94,46 +95,56 @@ class _DownloadScreenState extends State<DownloadScreen> {
   }
 
   Future<void> _parseAndDownload(String url) async {
-    // 使用系统提供的应用文档目录
-    final appDir = await getApplicationDocumentsDirectory();
-    final savePath =
-        '${appDir.path}/${widget.platformId == 'xhs' ? 'XhsDownload' : 'DyDownload'}';
-    await Directory(savePath).create(recursive: true);
-    Map<String, dynamic> result;
-    if (widget.platformId == 'xhs') {
-      result = await XhsBridge.parseAndDownload(url, savePath);
-    } else {
-      result = await DouyinBridge.parseAndDownload(url, savePath);
-    }
-    if (result['success'] == true) {
-      // 自动保存到相册
-      await GalleryService.instance.requestPermission();
-      final path = result['path']?.toString() ?? '';
-      final albumName = widget.platformId == 'xhs' ? '小红书下载' : '抖音下载';
+    setState(() => _isDownloading = true);
+    _showSnackBar('开始下载', '正在解析链接...');
 
-      if (path.isNotEmpty) {
-        // 单文件下载（视频/图片）：直接保存
-        final saved =
-            await GalleryService.instance.saveToGallery(path, album: albumName);
-        final albumMsg = saved ? '已保存到相册' : '相册保存失败';
-        _showSnackBar('下载成功', '${result['title'] ?? ''}\n$albumMsg');
+    try {
+      // 使用系统提供的应用文档目录
+      final appDir = await getApplicationDocumentsDirectory();
+      final savePath =
+          '${appDir.path}/${widget.platformId == 'xhs' ? 'XhsDownload' : 'DyDownload'}';
+      await Directory(savePath).create(recursive: true);
+      Map<String, dynamic> result;
+      if (widget.platformId == 'xhs') {
+        result = await XhsBridge.parseAndDownload(url, savePath);
       } else {
-        // 图集下载（多文件）：递归扫描下载目录（含作者子目录），批量保存
-        final dir = Directory(savePath);
-        if (await dir.exists()) {
-          final files = <String>[];
-          await for (final entity in dir.list(recursive: true)) {
-            if (entity is File) files.add(entity.path);
-          }
-          final count = await GalleryService.instance
-              .saveAllToGallery(files, album: albumName);
-          _showSnackBar('下载成功', '${result['message'] ?? ''}\n$count 个文件已保存到相册');
-        } else {
-          _showSnackBar('下载成功', result['message'] ?? '已完成');
-        }
+        result = await DouyinBridge.parseAndDownload(url, savePath);
       }
-    } else {
-      _showSnackBar('下载失败', result['message'] ?? '未知错误');
+      if (result['success'] == true) {
+        // 自动保存到相册
+        await GalleryService.instance.requestPermission();
+        final path = result['path']?.toString() ?? '';
+        final albumName = widget.platformId == 'xhs' ? '小红书下载' : '抖音下载';
+
+        if (path.isNotEmpty) {
+          // 单文件下载（视频/图片）：直接保存
+          final saved = await GalleryService.instance
+              .saveToGallery(path, album: albumName);
+          final albumMsg = saved ? '已保存到相册' : '相册保存失败';
+          _showSnackBar('下载成功', '${result['title'] ?? ''}\n$albumMsg');
+        } else {
+          // 图集下载（多文件）：递归扫描下载目录（含作者子目录），批量保存
+          final dir = Directory(savePath);
+          if (await dir.exists()) {
+            final files = <String>[];
+            await for (final entity in dir.list(recursive: true)) {
+              if (entity is File) files.add(entity.path);
+            }
+            final count = await GalleryService.instance
+                .saveAllToGallery(files, album: albumName);
+            _showSnackBar(
+                '下载成功', '${result['message'] ?? ''}\n$count 个文件已保存到相册');
+          } else {
+            _showSnackBar('下载成功', result['message'] ?? '已完成');
+          }
+        }
+      } else {
+        _showSnackBar('下载失败', result['message'] ?? '未知错误');
+      }
+    } catch (e) {
+      _showSnackBar('下载失败', e.toString());
+    } finally {
+      if (mounted) setState(() => _isDownloading = false);
     }
   }
 
@@ -249,18 +260,50 @@ class _DownloadScreenState extends State<DownloadScreen> {
             ),
             const SizedBox(height: 8),
 
-            // 从剪贴板粘贴按钮
-            SizedBox(
-              height: 44,
-              child: FilledButton(
-                onPressed: _pasteFromClipboard,
-                style: FilledButton.styleFrom(
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
+            // 从剪贴板粘贴按钮 + 下载按钮
+            Row(
+              children: [
+                Expanded(
+                  child: SizedBox(
+                    height: 44,
+                    child: OutlinedButton(
+                      onPressed: _pasteFromClipboard,
+                      style: OutlinedButton.styleFrom(
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      child: const Text('从剪贴板粘贴'),
+                    ),
                   ),
                 ),
-                child: const Text('从剪贴板粘贴'),
-              ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: SizedBox(
+                    height: 44,
+                    child: FilledButton(
+                      onPressed: _isDownloading
+                          ? null
+                          : () => _requireLink(_parseAndDownload),
+                      style: FilledButton.styleFrom(
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      child: _isDownloading
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : const Text('下载'),
+                    ),
+                  ),
+                ),
+              ],
             ),
 
             const SizedBox(height: 24),

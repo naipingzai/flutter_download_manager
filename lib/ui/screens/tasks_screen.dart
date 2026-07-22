@@ -5,8 +5,7 @@ import '../../service/download_task_manager.dart';
 import '../../platform/douyin/douyin_bridge.dart';
 import '../../platform/xhs/xhs_bridge.dart';
 
-/// 任务管理页面 - 完全复刻原项目 TasksScreen
-/// 顶部操作栏（全部停止/全部开始 + 清理完成/清理失败）+ 任务卡片列表
+/// 任务管理页面
 class TasksScreen extends StatelessWidget {
   final String platform;
   final int scrollToTop;
@@ -27,115 +26,97 @@ class TasksScreen extends StatelessWidget {
 
     return Column(
       children: [
-        // ── 顶部操作栏（常显）── 对应原项目顶部按钮区域
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-          child: Column(
-            children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: SizedBox(
-                      height: 36,
-                      child: OutlinedButton(
-                        onPressed: hasDownloading
-                            ? () {
-                                for (final task in tasks.where(
-                                  (t) => t.status == TaskStatus.downloading,
-                                )) {
-                                  if (task.source == 'xhs') {
-                                    XhsBridge.pauseTask(task.id);
-                                  } else {
-                                    DouyinBridge.pauseTask(task.id);
-                                  }
-                                  taskManager.updateTask(
-                                    task.copyWith(status: TaskStatus.paused),
-                                  );
-                                }
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(content: Text('已暂停全部')),
-                                );
-                              }
-                            : null,
-                        child: const Text('全部停止'),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: SizedBox(
-                      height: 36,
-                      child: FilledButton(
-                        onPressed: hasPausedOrFailed
-                            ? () {
-                                for (final task in tasks.where(
-                                  (t) =>
-                                      t.status == TaskStatus.paused ||
-                                      t.status == TaskStatus.failed,
-                                )) {
-                                  if (task.source == 'xhs') {
-                                    XhsBridge.resumeTask(task.id);
-                                  } else {
-                                    DouyinBridge.resumeTask(task.id);
-                                  }
-                                  taskManager.updateTask(
-                                    task.copyWith(
-                                      status: TaskStatus.downloading,
-                                      errorMessage: '',
-                                      downloadedSize: 0,
-                                    ),
-                                  );
-                                }
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(content: Text('已开始全部')),
-                                );
-                              }
-                            : null,
-                        child: const Text('全部开始'),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 4),
-              Row(
-                children: [
-                  Expanded(
-                    child: SizedBox(
-                      height: 32,
-                      child: TextButton(
-                        onPressed: () {
-                          taskManager.removeByStatus(TaskStatus.completed);
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('已清理完成任务')),
-                          );
-                        },
-                        child: const Text('清理完成'),
-                      ),
-                    ),
-                  ),
-                  Expanded(
-                    child: SizedBox(
-                      height: 32,
-                      child: TextButton(
-                        onPressed: () {
-                          taskManager.removeByStatus(TaskStatus.failed);
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('已清理失败任务')),
-                          );
-                        },
-                        style: TextButton.styleFrom(
-                          foregroundColor: Theme.of(context).colorScheme.error,
-                        ),
-                        child: const Text('清理失败'),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ],
+        // ── 顶部操作栏 ── 仅在有任务时显示
+        if (tasks.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 4,
+              children: [
+                ActionChip(
+                  label: const Text('全部暂停'),
+                  avatar: const Icon(Icons.pause_circle_outline, size: 18),
+                  onPressed: hasDownloading
+                      ? () {
+                          for (final task in tasks.where(
+                            (t) => t.status == TaskStatus.downloading,
+                          )) {
+                            if (task.source == 'xhs') {
+                              XhsBridge.pauseTask(task.id);
+                            } else {
+                              DouyinBridge.pauseTask(task.id);
+                            }
+                            taskManager.updateTask(
+                              task.copyWith(status: TaskStatus.paused),
+                            );
+                          }
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('已暂停全部')),
+                            );
+                          }
+                        }
+                      : null,
+                ),
+                ActionChip(
+                  label: const Text('全部继续'),
+                  avatar: const Icon(Icons.play_circle_outline, size: 18),
+                  onPressed: hasPausedOrFailed
+                      ? () {
+                          for (final task in tasks.where(
+                            (t) =>
+                                t.status == TaskStatus.paused ||
+                                t.status == TaskStatus.failed,
+                          )) {
+                            if (task.source == 'xhs') {
+                              XhsBridge.resumeTask(task.id);
+                            } else {
+                              DouyinBridge.resumeTask(task.id);
+                            }
+                            taskManager.updateTask(
+                              task.copyWith(
+                                status: TaskStatus.downloading,
+                                errorMessage: '',
+                              ),
+                            );
+                          }
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('已开始全部')),
+                            );
+                          }
+                        }
+                      : null,
+                ),
+                ActionChip(
+                  label: const Text('清已完成'),
+                  avatar: const Icon(Icons.cleaning_services, size: 18),
+                  onPressed: () {
+                    taskManager.removeByStatus(TaskStatus.completed);
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('已清理完成任务')),
+                      );
+                    }
+                  },
+                ),
+                ActionChip(
+                  label: const Text('清失败'),
+                  avatar: Icon(Icons.delete_sweep,
+                      size: 18, color: Theme.of(context).colorScheme.error),
+                  onPressed: () {
+                    taskManager.removeByStatus(TaskStatus.failed);
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('已清理失败任务')),
+                      );
+                    }
+                  },
+                ),
+              ],
+            ),
           ),
-        ),
 
         // ── 任务列表 ──
         Expanded(
@@ -147,16 +128,19 @@ class TasksScreen extends StatelessWidget {
                       Icon(
                         Icons.cloud_download_outlined,
                         size: 64,
-                        color: Theme.of(
-                          context,
-                        ).colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
+                        color: Theme.of(context)
+                            .colorScheme
+                            .onSurfaceVariant
+                            .withValues(alpha: 0.5),
                       ),
                       const SizedBox(height: 16),
                       Text(
                         '暂无任务',
                         style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
-                        ),
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .onSurfaceVariant,
+                            ),
                       ),
                     ],
                   ),
@@ -193,7 +177,6 @@ class TasksScreen extends StatelessWidget {
                             task.copyWith(
                               status: TaskStatus.downloading,
                               errorMessage: '',
-                              downloadedSize: 0,
                             ),
                           );
                         }
@@ -234,7 +217,7 @@ class TasksScreen extends StatelessWidget {
   }
 }
 
-/// 任务卡片 - 完全复刻原项目 TaskCard
+/// 任务卡片
 class _TaskCard extends StatelessWidget {
   final DownloadTask task;
   final VoidCallback onTap;
@@ -269,7 +252,9 @@ class _TaskCard extends StatelessWidget {
       case TaskStatus.queued:
         return '排队中';
       case TaskStatus.downloading:
-        return '下载中 ${task.totalSize > 0 ? "${(task.progress * 100).toStringAsFixed(1)}%" : ""}';
+        return task.totalSize > 0
+            ? '下载中 ${(task.progress * 100).toStringAsFixed(0)}% (${task.downloadedSizeStr}/${task.totalSizeStr})'
+            : '下载中...';
       case TaskStatus.paused:
         return '已暂停';
       case TaskStatus.completed:
@@ -295,6 +280,16 @@ class _TaskCard extends StatelessWidget {
             children: [
               Row(
                 children: [
+                  // 状态指示器
+                  Container(
+                    width: 8,
+                    height: 8,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: _getStatusColor(context),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
                   // 标题和状态
                   Expanded(
                     child: Column(
@@ -307,77 +302,55 @@ class _TaskCard extends StatelessWidget {
                           style: Theme.of(context).textTheme.bodyMedium,
                         ),
                         const SizedBox(height: 2),
-                        Row(
-                          children: [
-                            Text(
-                              _getStatusText(),
-                              style: Theme.of(context).textTheme.bodySmall
-                                  ?.copyWith(color: _getStatusColor(context)),
-                            ),
-                            if (task.status == TaskStatus.failed &&
-                                task.errorMessage.isNotEmpty) ...[
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Text(
-                                  task.errorMessage.length > 30
-                                      ? '${task.errorMessage.substring(0, 30)}...'
-                                      : task.errorMessage,
-                                  style: Theme.of(context).textTheme.bodySmall
-                                      ?.copyWith(
-                                        color: Theme.of(
-                                          context,
-                                        ).colorScheme.error,
-                                      ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                            ],
-                          ],
+                        Text(
+                          _getStatusText(),
+                          style: Theme.of(context)
+                              .textTheme
+                              .bodySmall
+                              ?.copyWith(color: _getStatusColor(context)),
                         ),
+                        if (task.status == TaskStatus.failed &&
+                            task.errorMessage.isNotEmpty) ...[
+                          const SizedBox(height: 2),
+                          Text(
+                            task.errorMessage.length > 50
+                                ? '${task.errorMessage.substring(0, 50)}...'
+                                : task.errorMessage,
+                            style: Theme.of(context)
+                                .textTheme
+                                .bodySmall
+                                ?.copyWith(
+                                  color: Theme.of(context).colorScheme.error,
+                                ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
                       ],
                     ),
                   ),
-
                   // 操作按钮
                   if (task.status == TaskStatus.downloading)
-                    SizedBox(
-                      width: 36,
-                      height: 36,
-                      child: IconButton(
-                        icon: const Icon(Icons.pause, size: 20),
-                        onPressed: onPauseResume,
-                        padding: EdgeInsets.zero,
-                      ),
+                    IconButton(
+                      icon: const Icon(Icons.pause, size: 20),
+                      onPressed: onPauseResume,
                     )
                   else if (task.status == TaskStatus.paused ||
                       task.status == TaskStatus.failed)
-                    SizedBox(
-                      width: 36,
-                      height: 36,
-                      child: IconButton(
-                        icon: const Icon(Icons.play_arrow, size: 20),
-                        onPressed: onPauseResume,
-                        padding: EdgeInsets.zero,
-                      ),
+                    IconButton(
+                      icon: const Icon(Icons.play_arrow, size: 20),
+                      onPressed: onPauseResume,
                     )
                   else if (task.status == TaskStatus.completed)
-                    SizedBox(
-                      width: 36,
-                      height: 36,
-                      child: IconButton(
-                        icon: Icon(
-                          Icons.delete,
+                    IconButton(
+                      icon: Icon(Icons.delete,
                           size: 18,
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
-                        ),
-                        onPressed: onDelete,
-                        padding: EdgeInsets.zero,
-                      ),
+                          color:
+                              Theme.of(context).colorScheme.onSurfaceVariant),
+                      onPressed: onDelete,
                     ),
                 ],
               ),
-
               // 进度条 - 仅下载中/暂停时显示
               if (task.status == TaskStatus.downloading ||
                   task.status == TaskStatus.paused) ...[
@@ -385,9 +358,8 @@ class _TaskCard extends StatelessWidget {
                 LinearProgressIndicator(
                   value: task.progress,
                   minHeight: 3,
-                  backgroundColor: Theme.of(
-                    context,
-                  ).colorScheme.surfaceContainerHighest,
+                  backgroundColor:
+                      Theme.of(context).colorScheme.surfaceContainerHighest,
                 ),
               ],
             ],
