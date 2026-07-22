@@ -74,10 +74,10 @@ class NativeDownloadService {
   Future<Map<String, dynamic>> downloadDouyinVideo(
       String url, String savePath) async {
     try {
-      final realUrl = await _resolveRedirect(url);
-      final awemeId = _extractAwemeId(realUrl);
+      final realUrl = await resolveRedirect(url);
+      final awemeId = extractAwemeId(realUrl);
       if (awemeId.isEmpty) {
-        final directId = _extractAwemeId(url);
+        final directId = extractAwemeId(url);
         if (directId.isEmpty) {
           return {'success': false, 'message': '无法提取视频ID: $url'};
         }
@@ -99,7 +99,7 @@ class NativeDownloadService {
       final detailUrl = 'https://www.douyin.com/aweme/v1/web/aweme/detail/'
           '?aweme_id=$awemeId&${_queryFromParams(params)}&a_bogus=$aBogus';
 
-      final detailBody = await _httpGetJson(detailUrl,
+      final detailBody = await httpGetJson(detailUrl,
           withCookie: _douyinCookie, referer: _douyinReferer);
       if (detailBody.isEmpty) {
         return {'success': false, 'message': 'API 请求失败'};
@@ -131,7 +131,7 @@ class NativeDownloadService {
       // 优先检查 images（图片动态/图集），再检查 video
       final images = awemeDetail['images'] as List?;
       if (images != null && images.isNotEmpty) {
-        return await _downloadDouyinImages(images, fileBaseName, authorDir);
+        return await downloadDouyinImages(images, fileBaseName, authorDir);
       }
 
       final video = awemeDetail['video'] as Map<String, dynamic>?;
@@ -165,7 +165,7 @@ class NativeDownloadService {
       }
 
       final filePath =
-          await _downloadFile(videoUrl, authorDir, '$fileBaseName.mp4');
+          await downloadFile(videoUrl, authorDir, '$fileBaseName.mp4');
 
       if (filePath != null) {
         final size = await File(filePath).length();
@@ -183,7 +183,7 @@ class NativeDownloadService {
     }
   }
 
-  Future<Map<String, dynamic>> _downloadDouyinImages(
+  Future<Map<String, dynamic>> downloadDouyinImages(
       List images, String title, String savePath) async {
     await Directory(savePath).create(recursive: true);
     int count = 0;
@@ -214,7 +214,7 @@ class NativeDownloadService {
       }
       if (primaryUrl == null) continue;
 
-      final filePath = await _downloadFile(
+      final filePath = await downloadFile(
           primaryUrl, savePath, '${title}_${i + 1}$primaryExt');
       if (filePath != null) {
         count++;
@@ -236,7 +236,7 @@ class NativeDownloadService {
     try {
       String finalUrl = url;
       if (url.contains('xhslink.com')) {
-        finalUrl = await _resolveRedirect(url, referer: _xhsReferer);
+        finalUrl = await resolveRedirect(url, referer: _xhsReferer);
       }
 
       final noteId = _extractXhsNoteId(finalUrl);
@@ -295,7 +295,7 @@ class NativeDownloadService {
       final videoUrl = _extractXhsVideoUrl(video);
       if (videoUrl.isNotEmpty) {
         final filePath =
-            await _downloadFile(videoUrl, authorDir, '$fileBaseName.mp4');
+            await downloadFile(videoUrl, authorDir, '$fileBaseName.mp4');
         if (filePath != null)
           return {
             'success': true,
@@ -314,7 +314,7 @@ class NativeDownloadService {
         final imgUrl =
             img['urlDefault']?.toString() ?? img['url']?.toString() ?? '';
         if (imgUrl.isEmpty) continue;
-        final fp = await _downloadFile(
+        final fp = await downloadFile(
             imgUrl, authorDir, '${fileBaseName}_${i + 1}.jpg');
         if (fp != null) count++;
       }
@@ -332,7 +332,7 @@ class NativeDownloadService {
 
   // ═══ 工具方法 ═══
 
-  Future<String> _resolveRedirect(String url, {String? referer}) async {
+  Future<String> resolveRedirect(String url, {String? referer}) async {
     try {
       final uri = Uri.parse(url);
       final req = await _client.getUrl(uri);
@@ -350,7 +350,7 @@ class NativeDownloadService {
     }
   }
 
-  Future<String> _httpGetJson(String url,
+  Future<String> httpGetJson(String url,
       {String? withCookie, String? referer}) async {
     final uri = Uri.parse(url);
     final req = await _client.getUrl(uri);
@@ -367,7 +367,7 @@ class NativeDownloadService {
   /// 下载文件，支持进度回调
   /// [onProgress]: (downloadedBytes, totalBytes) 回调
   /// 返回文件路径，失败返回 null
-  Future<String?> _downloadFile(String url, String savePath, String filename,
+  Future<String?> downloadFile(String url, String savePath, String filename,
       {void Function(int downloaded, int total)? onProgress}) async {
     try {
       await Directory(savePath).create(recursive: true);
@@ -435,7 +435,7 @@ class NativeDownloadService {
 
   // ═══ URL 解析工具 ═══
 
-  String _extractAwemeId(String url) {
+  String extractAwemeId(String url) {
     for (final p in [
       RegExp(r'/(?:video|note|slides)/(\d{19})'),
       RegExp(r'modal_id=(\d{19})'),
@@ -515,11 +515,16 @@ class NativeDownloadService {
       .join('&');
 
   /// 检测链接信息（可作为「查看作者作品」的入口）
-  Future<String> detectDouyinLinkInfo(String link) async =>
-      '{\"success\":true,\"message\":\"链接可解析，请直接粘贴下载: $link\"}';
-
-  Future<String> detectXhsLinkInfo(String link) async =>
-      '{\"success\":true,\"message\":\"链接可解析，请直接粘贴下载: $link\"}';
+  /// 签名 HTTP GET — 供 DouyinApiService 使用
+  Future<String> httpGetSigned(String baseUrl,
+      {Map<String, String>? extraParams, String? referer}) async {
+    final params = Map<String, String>.from(_douyinApiParams);
+    if (extraParams != null) params.addAll(extraParams);
+    final aBogus = _ABogus(_pcUA).getValue(_queryFromParams(params));
+    final url = '$baseUrl?${_queryFromParams(params)}&a_bogus=$aBogus';
+    return await httpGetJson(url,
+        withCookie: _douyinCookie, referer: referer ?? _douyinReferer);
+  }
 
   void dispose() => _client.close();
 }

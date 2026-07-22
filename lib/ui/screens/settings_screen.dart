@@ -118,7 +118,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       builder: (context) => AlertDialog(
         title: const Text('关于'),
         content: const Text(
-          '高级下载器 (AdvanceDownloader) — 聚合多平台内容下载工具\n\n'
+          'Flutter Download Manager — 聚合多平台内容下载工具\n\n'
           '作者: 奶瓶仔\n'
           '开源协议: GPL-3.0\n\n'
           '抖音模块基于 TikTokDownloader by JoeanAmier\n'
