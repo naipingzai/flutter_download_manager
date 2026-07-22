@@ -38,21 +38,6 @@ abstract class BridgeBase {
     await _taskManager.addTask(task);
 
     try {
-      // 监听任务状态变化
-      bool shouldCancel = false;
-      _taskManager.addListener(() {
-        final current = _taskManager.getById(taskId);
-        if (current == null) {
-          shouldCancel = true;
-          return;
-        }
-        // 如果任务被暂停，取消当前下载
-        if (current.status == TaskStatus.paused ||
-            current.status == TaskStatus.failed) {
-          shouldCancel = true;
-        }
-      });
-
       final result = await execute();
       final success = result['success'] == true;
       final title = result['title']?.toString() ?? link;
