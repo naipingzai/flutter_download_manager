@@ -75,6 +75,5 @@ download_manager_data/
 
 # macOS, Windows, Web (not targeting these)
 /macos/
-/windows/
 /web/
 devtools_options.yaml
