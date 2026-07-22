@@ -118,7 +118,6 @@ class _PlatformShellState extends State<PlatformShell> {
                 ),
                 TasksScreen(
                   platform: widget.platformId,
-                  scrollToTop: _tasksScrollToTop,
                 ),
                 SettingsScreen(
                   key: ValueKey(_settingsRefreshKey),

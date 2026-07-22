@@ -1,4 +1,4 @@
-name: Build APK and IPA
+name: Build All Platforms
 
 on:
   push:
@@ -85,3 +85,24 @@ jobs:
         with:
           name: linux-bundle
           path: build/linux/x64/release/bundle/
+
+  build-windows:
+    name: Build Windows
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.44.x'
+          channel: 'stable'
+      - name: Install Flutter dependencies
+        run: flutter pub get
+      - name: Analyze
+        run: flutter analyze --no-fatal-infos
+      - name: Build Windows
+        run: flutter build windows --release
+      - name: Upload Windows bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-bundle
+          path: build/windows/x64/runner/Release/
