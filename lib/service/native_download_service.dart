@@ -335,11 +335,14 @@ class NativeDownloadService {
   Future<String> resolveRedirect(String url, {String? referer}) async {
     try {
       final uri = Uri.parse(url);
-      final req = await _client.getUrl(uri);
+      final req = await _client.getUrl(uri).timeout(
+            const Duration(seconds: 15),
+            onTimeout: () => throw TimeoutException('重定向超时'),
+          );
       req.followRedirects = true;
       req.headers.set('User-Agent', _pcUA);
       if (referer != null) req.headers.set('Referer', referer);
-      final resp = await req.close();
+      final resp = await req.close().timeout(const Duration(seconds: 15));
       await resp.drain();
       if (resp.redirects.isNotEmpty) {
         return resp.redirects.last.location.toString();
@@ -352,16 +355,23 @@ class NativeDownloadService {
 
   Future<String> httpGetJson(String url,
       {String? withCookie, String? referer}) async {
-    final uri = Uri.parse(url);
-    final req = await _client.getUrl(uri);
-    req.headers.set('User-Agent', _pcUA);
-    if (referer != null) req.headers.set('Referer', referer);
-    if (withCookie != null && withCookie.isNotEmpty) {
-      req.headers.set('Cookie', withCookie);
+    try {
+      final uri = Uri.parse(url);
+      final req = await _client.getUrl(uri).timeout(
+            const Duration(seconds: 30),
+            onTimeout: () => throw TimeoutException('请求超时'),
+          );
+      req.headers.set('User-Agent', _pcUA);
+      if (referer != null) req.headers.set('Referer', referer);
+      if (withCookie != null && withCookie.isNotEmpty) {
+        req.headers.set('Cookie', withCookie);
+      }
+      final resp = await req.close().timeout(const Duration(seconds: 30));
+      if (resp.statusCode != 200) return '';
+      return await resp.transform(utf8.decoder).join();
+    } catch (e) {
+      return '';
     }
-    final resp = await req.close();
-    if (resp.statusCode != 200) return '';
-    return await resp.transform(utf8.decoder).join();
   }
 
   /// 下载文件，支持进度回调
