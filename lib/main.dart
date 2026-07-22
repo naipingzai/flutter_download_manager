@@ -33,7 +33,7 @@ class DownloadManagerApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: '媒体库',
+      title: '下载',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.lightTheme(null),
       darkTheme: AppTheme.darkTheme(null),

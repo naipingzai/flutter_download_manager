@@ -11,7 +11,7 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- 保存到相册无需额外权限，gal 插件会自动处理 -->
     <application
-        android:label="媒体库"
+        android:label="下载"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity
