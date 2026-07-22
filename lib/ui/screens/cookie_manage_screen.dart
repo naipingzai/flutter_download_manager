@@ -96,49 +96,61 @@ class _CookieManageScreenState extends State<CookieManageScreen> {
     final controller = TextEditingController();
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('输入 Cookie'),
-        content: TextField(
-          controller: controller,
-          maxLines: 6,
-          minLines: 4,
-          decoration: const InputDecoration(
-            hintText: '粘贴 Cookie 内容...',
-            border: OutlineInputBorder(),
+      builder: (context) {
+        final size = MediaQuery.of(context).size;
+        final dialogWidth = size.width * 0.85;
+        final dialogHeight = size.height * 0.5;
+        return AlertDialog(
+          title: const Text('输入 Cookie'),
+          content: SizedBox(
+            width: dialogWidth.clamp(280, 600),
+            height: dialogHeight.clamp(200, 400),
+            child: TextField(
+              controller: controller,
+              expands: true,
+              maxLines: null,
+              minLines: null,
+              textAlignVertical: TextAlignVertical.top,
+              decoration: const InputDecoration(
+                hintText: '粘贴 Cookie 内容...',
+                border: OutlineInputBorder(),
+                contentPadding: EdgeInsets.all(12),
+              ),
+            ),
           ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () async {
-              final cookie = controller.text.trim();
-              if (cookie.isEmpty) {
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () async {
+                final cookie = controller.text.trim();
+                if (cookie.isEmpty) {
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Cookie 不能为空')),
+                    );
+                  }
+                  return;
+                }
+                final name = 'Cookie ${_cookies.length + 1}';
+                await _store.add(name, cookie);
+                await _store.setActiveName(name);
+                _applyToBridge(cookie);
+                await _loadCookies();
+                if (context.mounted) Navigator.pop(context);
                 if (context.mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Cookie 不能为空')),
+                    const SnackBar(content: Text('已保存')),
                   );
                 }
-                return;
-              }
-              final name = 'Cookie ${_cookies.length + 1}';
-              await _store.add(name, cookie);
-              await _store.setActiveName(name);
-              _applyToBridge(cookie);
-              await _loadCookies();
-              if (context.mounted) Navigator.pop(context);
-              if (context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('已保存')),
-                );
-              }
-            },
-            child: const Text('保存'),
-          ),
-        ],
-      ),
+              },
+              child: const Text('保存'),
+            ),
+          ],
+        );
+      },
     );
   }
 
