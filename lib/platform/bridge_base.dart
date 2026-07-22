@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'package:uuid/uuid.dart';
 import '../model/download_task.dart';
 import '../service/download_task_manager.dart';
@@ -42,8 +43,25 @@ abstract class BridgeBase {
       final title = result['title']?.toString() ?? link;
 
       if (success) {
-        final size = result['size'] as int? ?? 0;
+        var size = result['size'] as int? ?? 0;
         final filePath = result['path']?.toString() ?? '';
+
+        // 如果 size 为空（图集），扫描下载目录计算总大小
+        if (size == 0 && filePath.isEmpty) {
+          try {
+            final dir = Directory(savePath);
+            if (await dir.exists()) {
+              int total = 0;
+              await for (final entity in dir.list(recursive: true)) {
+                if (entity is File) {
+                  total += await entity.length();
+                }
+              }
+              size = total;
+            }
+          } catch (_) {}
+        }
+
         await _taskManager.updateTask(
           task.copyWith(
             title: title,

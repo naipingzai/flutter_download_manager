@@ -260,51 +260,42 @@ class _DownloadScreenState extends State<DownloadScreen> {
             ),
             const SizedBox(height: 8),
 
-            // 从剪贴板粘贴按钮 + 下载按钮
-            Row(
-              children: [
-                Expanded(
-                  child: SizedBox(
-                    height: 44,
-                    child: OutlinedButton(
-                      onPressed: _pasteFromClipboard,
-                      style: OutlinedButton.styleFrom(
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
-                      child: const Text('从剪贴板粘贴'),
-                    ),
+            // 从剪贴板粘贴按钮
+            SizedBox(
+              height: 44,
+              child: OutlinedButton.icon(
+                onPressed: _pasteFromClipboard,
+                icon: const Icon(Icons.content_paste),
+                label: const Text('从剪贴板粘贴'),
+                style: OutlinedButton.styleFrom(
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
                   ),
                 ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: SizedBox(
-                    height: 44,
-                    child: FilledButton(
-                      onPressed: _isDownloading
-                          ? null
-                          : () => _requireLink(_parseAndDownload),
-                      style: FilledButton.styleFrom(
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
-                      child: _isDownloading
-                          ? const SizedBox(
-                              width: 20,
-                              height: 20,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: Colors.white,
-                              ),
-                            )
-                          : const Text('下载'),
-                    ),
-                  ),
-                ),
-              ],
+              ),
             ),
+
+            // 下载进度提示
+            if (_isDownloading) ...[
+              const SizedBox(height: 8),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    '正在下载...',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Theme.of(context).colorScheme.primary,
+                        ),
+                  ),
+                ],
+              ),
+            ],
 
             const SizedBox(height: 24),
 
