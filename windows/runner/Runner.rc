@@ -89,11 +89,11 @@ BEGIN
     BEGIN
         BLOCK "040904e4"
         BEGIN
-            VALUE "CompanyName", "com.advancedownloader" "\0"
+            VALUE "CompanyName", "com.mediaapp" "\0"
             VALUE "FileDescription", "媒体库" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
             VALUE "InternalName", "媒体库" "\0"
-            VALUE "LegalCopyright", "Copyright (C) 2026 com.advancedownloader. All rights reserved." "\0"
+            VALUE "LegalCopyright", "Copyright (C) 2026 com.mediaapp. All rights reserved." "\0"
             VALUE "OriginalFilename", "媒体库.exe" "\0"
             VALUE "ProductName", "媒体库" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
