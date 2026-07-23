@@ -1,4 +1,4 @@
-import 'dart:io';
+
 import '../bridge_base.dart';
 import '../../service/native_download_service.dart';
 
@@ -13,14 +13,11 @@ class DouyinBridge {
       savePath: savePath,
       source: 'douyin',
       type: 'video',
-      execute: () async {
+      execute: (updateStatus) async {
+        updateStatus('🔍 解析短链接...');
         final result = await _native.downloadDouyinVideo(link, savePath);
         if (result['success'] == true) {
-          final path = result['path']?.toString() ?? '';
-          if (path.isNotEmpty) {
-            final file = File(path);
-            if (await file.exists()) return result;
-          }
+          updateStatus('✅ ${result['title'] ?? '下载完成'}');
         }
         return result;
       },

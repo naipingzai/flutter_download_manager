@@ -10,12 +10,25 @@ abstract class BridgeBase {
   static const _uuid = Uuid();
   static final DownloadTaskManager _taskManager = DownloadTaskManager();
 
+  /// 当前正在执行的任务ID（供下载过程中更新状态用）
+  static String? _activeTaskId;
+
+  /// 更新当前任务标题（下载过程中调用，显示进度日志）
+  static void updateTaskStatus(String status) {
+    if (_activeTaskId == null) return;
+    final task = _taskManager.getById(_activeTaskId!);
+    if (task == null) return;
+    _taskManager.updateTask(task.copyWith(title: status));
+  }
+
   static Future<Map<String, dynamic>> executeTask({
     required String link,
     required String savePath,
     required String source,
     required String type,
-    required Future<Map<String, dynamic>> Function() execute,
+    required Future<Map<String, dynamic>> Function(
+            void Function(String status) updateStatus)
+        execute,
   }) async {
     // 去重：如果同 URL 的任务已完成或正在下载，不重复创建
     final existing = _taskManager.findByUrl(link);
@@ -29,9 +42,11 @@ abstract class BridgeBase {
     }
 
     final taskId = _uuid.v4();
+    _activeTaskId = taskId;
+
     final task = DownloadTask(
       id: taskId,
-      title: '解析中: $link',
+      title: '🔍 解析链接中...',
       url: link,
       type: type,
       status: TaskStatus.downloading,
@@ -39,13 +54,24 @@ abstract class BridgeBase {
     );
     await _taskManager.addTask(task);
 
+    void updateStatus(String status) {
+      final cur = _taskManager.getById(taskId);
+      if (cur != null) {
+        _taskManager.updateTask(cur.copyWith(title: status));
+      }
+    }
+
     try {
-      final result = await execute();
+      final result = await execute(updateStatus);
 
       // 检查任务状态
       final cur = _taskManager.getById(taskId);
-      if (cur == null) return {'success': false, 'message': '已取消'};
+      if (cur == null) {
+        _activeTaskId = null;
+        return {'success': false, 'message': '已取消'};
+      }
       if (cur.status == TaskStatus.paused) {
+        _activeTaskId = null;
         return {'success': false, 'message': '已暂停'};
       }
 
@@ -68,7 +94,7 @@ abstract class BridgeBase {
           } catch (_) {}
         }
         await _taskManager.updateTask(cur.copyWith(
-          title: title,
+          title: '✅ $title',
           status: TaskStatus.completed,
           totalSize: size,
           downloadedSize: size,
@@ -76,18 +102,22 @@ abstract class BridgeBase {
         ));
       } else {
         await _taskManager.updateTask(cur.copyWith(
-          title: title,
+          title: '❌ ${result['message'] ?? '下载失败'}',
           status: TaskStatus.failed,
           errorMessage: result['message']?.toString() ?? '下载失败',
         ));
       }
+      _activeTaskId = null;
       return result;
     } catch (e) {
       final cur = _taskManager.getById(taskId);
       if (cur != null) {
         await _taskManager.updateTask(cur.copyWith(
-            status: TaskStatus.failed, errorMessage: e.toString()));
+            title: '❌ $e',
+            status: TaskStatus.failed,
+            errorMessage: e.toString()));
       }
+      _activeTaskId = null;
       return {'success': false, 'message': e.toString()};
     }
   }
