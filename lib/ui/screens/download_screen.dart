@@ -26,7 +26,6 @@ class DownloadScreen extends StatefulWidget {
 
 class _DownloadScreenState extends State<DownloadScreen> {
   final TextEditingController _linkController = TextEditingController();
-  bool _isDownloading = false;
 
   @override
   void initState() {
@@ -92,7 +91,12 @@ class _DownloadScreenState extends State<DownloadScreen> {
       return;
     }
     await _syncCookie();
-    setState(() => _isDownloading = true);
+
+    // 只显示 SnackBar，不转圈，下载在后台进行
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('下载已开始，请在任务列表查看进度')),
+    );
 
     try {
       final appDir = await getApplicationDocumentsDirectory();
@@ -110,13 +114,11 @@ class _DownloadScreenState extends State<DownloadScreen> {
       if (!mounted) return;
       if (result['success'] == true) {
         final path = result['path']?.toString() ?? '';
-        final albumName =
-            widget.platformId == 'xhs' ? '小红书下载' : '抖音下载';
+        final albumName = widget.platformId == 'xhs' ? '小红书下载' : '抖音下载';
 
         await GalleryService.instance.requestPermission();
         if (path.isNotEmpty) {
-          await GalleryService.instance
-              .saveToGallery(path, album: albumName);
+          await GalleryService.instance.saveToGallery(path, album: albumName);
         } else {
           final dir = Directory(savePath);
           if (await dir.exists()) {
@@ -130,12 +132,13 @@ class _DownloadScreenState extends State<DownloadScreen> {
         }
         _showDialog('下载成功', '${result['title'] ?? ''}\n已保存到相册');
       } else {
-        _showDialog('下载失败', result['message']?.toString() ?? '未知错误');
+        final msg = result['message']?.toString() ?? '未知错误';
+        if (msg != '已下载过' && msg != '该链接正在下载中') {
+          _showDialog('下载失败', msg);
+        }
       }
     } catch (e) {
       _showDialog('下载失败', '$e');
-    } finally {
-      if (mounted) setState(() => _isDownloading = false);
     }
   }
 
@@ -192,37 +195,23 @@ class _DownloadScreenState extends State<DownloadScreen> {
                   child: SizedBox(
                     height: 48,
                     child: FilledButton.icon(
-                      onPressed: _isDownloading ? null : _download,
-                      icon: _isDownloading
-                          ? const SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: Colors.white,
-                              ),
-                            )
-                          : const Icon(Icons.download),
-                      label: Text(_isDownloading ? '下载中...' : '下载'),
+                      onPressed: _download,
+                      icon: const Icon(Icons.download),
+                      label: const Text('下载'),
                     ),
                   ),
                 ),
               ],
             ),
             const SizedBox(height: 24),
-            if (_isDownloading)
-              const Center(
-                child: Padding(
-                  padding: EdgeInsets.all(16),
-                  child: Column(
-                    children: [
-                      CircularProgressIndicator(),
-                      SizedBox(height: 8),
-                      Text('正在解析链接并下载...'),
-                    ],
-                  ),
-                ),
+            Center(
+              child: Text(
+                '下载后请在"任务"页查看进度',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
               ),
+            ),
           ],
         ),
       ),

@@ -66,13 +66,20 @@ class NativeDownloadService {
   /// 通用 HTTP GET
   Future<String> httpGet(String url,
       {Map<String, String>? extraHeaders}) async {
-    final uri = Uri.parse(url);
-    final req = await _client.getUrl(uri);
-    req.headers.set('User-Agent', _pcUA);
-    req.followRedirects = true;
-    if (extraHeaders != null) extraHeaders.forEach(req.headers.set);
-    final resp = await req.close();
-    return await resp.transform(utf8.decoder).join();
+    try {
+      final uri = Uri.parse(url);
+      final req = await _client.getUrl(uri).timeout(
+            const Duration(seconds: 30),
+            onTimeout: () => throw TimeoutException('请求超时'),
+          );
+      req.headers.set('User-Agent', _pcUA);
+      req.followRedirects = true;
+      if (extraHeaders != null) extraHeaders.forEach(req.headers.set);
+      final resp = await req.close().timeout(const Duration(seconds: 30));
+      return await resp.transform(utf8.decoder).join();
+    } catch (e) {
+      return '';
+    }
   }
 
   // ═══ 抖音视频下载 ═══

@@ -17,9 +17,15 @@ abstract class BridgeBase {
     required String type,
     required Future<Map<String, dynamic>> Function() execute,
   }) async {
+    // 去重：如果同 URL 的任务已完成或正在下载，不重复创建
     final existing = _taskManager.findByUrl(link);
-    if (existing != null && existing.status == TaskStatus.completed) {
-      return {'success': true, 'title': existing.title, 'message': '已下载过'};
+    if (existing != null) {
+      if (existing.status == TaskStatus.completed) {
+        return {'success': true, 'title': existing.title, 'message': '已下载过'};
+      }
+      if (existing.status == TaskStatus.downloading) {
+        return {'success': false, 'message': '该链接正在下载中'};
+      }
     }
 
     final taskId = _uuid.v4();
@@ -36,11 +42,9 @@ abstract class BridgeBase {
     try {
       final result = await execute();
 
-      // 下载完成后检查：如果用户已暂停/删除，不覆盖状态
+      // 检查任务状态
       final cur = _taskManager.getById(taskId);
-      if (cur == null) {
-        return {'success': false, 'message': '已取消'};
-      }
+      if (cur == null) return {'success': false, 'message': '已取消'};
       if (cur.status == TaskStatus.paused) {
         return {'success': false, 'message': '已暂停'};
       }
@@ -81,8 +85,8 @@ abstract class BridgeBase {
     } catch (e) {
       final cur = _taskManager.getById(taskId);
       if (cur != null) {
-        await _taskManager.updateTask(
-            cur.copyWith(status: TaskStatus.failed, errorMessage: e.toString()));
+        await _taskManager.updateTask(cur.copyWith(
+            status: TaskStatus.failed, errorMessage: e.toString()));
       }
       return {'success': false, 'message': e.toString()};
     }
