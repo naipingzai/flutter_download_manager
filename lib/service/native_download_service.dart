@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
+import 'package:flutter/foundation.dart';
 
 /// 平台下载服务 — 全平台统一的原生实现
 /// 所有平台（Linux/Android/iOS/macOS/Windows）流程完全相同：
@@ -86,8 +87,7 @@ class NativeDownloadService {
 
   // ═══ 抖音视频下载 ═══
 
-  Future<Map<String, dynamic>> downloadDouyinVideo(
-      String url, String savePath,
+  Future<Map<String, dynamic>> downloadDouyinVideo(String url, String savePath,
       {StatusCallback? onStatus}) async {
     try {
       onStatus?.call('🔍 解析短链接: $url');
@@ -127,7 +127,11 @@ class NativeDownloadService {
       final data = jsonDecode(detailBody) as Map<String, dynamic>;
       final awemeDetail = data['aweme_detail'] as Map<String, dynamic>?;
       if (awemeDetail == null) {
-        return {'success': false, 'message': '未找到作品数据，API返回: ${data['status_code'] ?? data['status_msg'] ?? '未知'}，可能需要设置Cookie'};
+        return {
+          'success': false,
+          'message':
+              '未找到作品数据，API返回: ${data['status_code'] ?? data['status_msg'] ?? '未知'}，可能需要设置Cookie'
+        };
       }
 
       final desc = awemeDetail['desc'] as String? ?? '抖音视频 $awemeId';
@@ -152,7 +156,8 @@ class NativeDownloadService {
       final images = awemeDetail['images'] as List?;
       if (images != null && images.isNotEmpty) {
         onStatus?.call('🖼 检测到图集，共${images.length}张');
-        return await downloadDouyinImages(images, fileBaseName, authorDir, onStatus: onStatus);
+        return await downloadDouyinImages(images, fileBaseName, authorDir,
+            onStatus: onStatus);
       }
 
       final video = awemeDetail['video'] as Map<String, dynamic>?;
@@ -256,8 +261,7 @@ class NativeDownloadService {
 
   // ═══ 小红书笔记下载 ═══
 
-  Future<Map<String, dynamic>> downloadXhsNote(
-      String url, String savePath,
+  Future<Map<String, dynamic>> downloadXhsNote(String url, String savePath,
       {StatusCallback? onStatus}) async {
     try {
       onStatus?.call('🔍 解析小红书链接...');
@@ -286,14 +290,16 @@ class NativeDownloadService {
       if (noteData.isEmpty) {
         return {'success': false, 'message': '无法解析页面数据，可能需要更新 Cookie'};
       }
-      return await _processXhsNote(noteData, noteId, savePath, onStatus: onStatus);
+      return await _processXhsNote(noteData, noteId, savePath,
+          onStatus: onStatus);
     } catch (e) {
       return {'success': false, 'message': '下载失败: $e'};
     }
   }
 
   Future<Map<String, dynamic>> _processXhsNote(
-      Map<String, dynamic> data, String noteId, String savePath, {StatusCallback? onStatus}) async {
+      Map<String, dynamic> data, String noteId, String savePath,
+      {StatusCallback? onStatus}) async {
     final noteData = data['note'] as Map<String, dynamic>? ??
         (data['noteDetailMap'] as Map<String, dynamic>?)?['[-1]']?['note'] ??
         data;
@@ -408,20 +414,37 @@ class NativeDownloadService {
   /// 返回文件路径，失败返回 null
   Future<String?> downloadFile(String url, String savePath, String filename,
       {void Function(int downloaded, int total)? onProgress}) async {
+    HttpClientRequest? req;
+    HttpClientResponse? resp;
+    IOSink? sink;
     try {
       await Directory(savePath).create(recursive: true);
       final uri = Uri.parse(url);
-      final req = await _client.getUrl(uri);
+
+      // 建立连接超时
+      req = await _client.getUrl(uri).timeout(
+            const Duration(seconds: 30),
+            onTimeout: () => throw TimeoutException('建立连接超时'),
+          );
       req.headers.set('User-Agent', _pcUA);
-      req.headers.set('Range', 'bytes=0-');
+      // 不再强制 Range 头，避免部分 CDN 返回 416
       req.headers.set(
           'Referer',
           url.contains('xhscdn.com') || url.contains('xiaohongshu')
               ? _xhsReferer
               : _douyinReferer);
 
-      final resp = await req.close();
-      if (resp.statusCode != 200 && resp.statusCode != 206) return null;
+      // 等待响应超时
+      resp = await req.close().timeout(
+            const Duration(seconds: 60),
+            onTimeout: () => throw TimeoutException('等待响应超时'),
+          );
+      if (resp.statusCode != 200 && resp.statusCode != 206) {
+        try {
+          await resp.drain<void>();
+        } catch (_) {}
+        return null;
+      }
 
       // 获取总大小
       final total = int.tryParse(resp.headers.value('content-length') ?? '') ??
@@ -451,15 +474,53 @@ class NativeDownloadService {
       final filePath = '$savePath/$safeName';
 
       final file = File(filePath);
-      final sink = file.openWrite();
+      sink = file.openWrite();
       int downloaded = 0;
-      await for (final chunk in resp) {
-        sink.add(chunk);
-        downloaded += chunk.length;
-        onProgress?.call(downloaded, total);
+      // 跟踪最近一次接收数据的时间，若 30 秒无新数据则视为卡住
+      DateTime lastChunkAt = DateTime.now();
+      Timer? stallTimer;
+      final completer = Completer<void>();
+      StreamSubscription<List<int>>? sub;
+      stallTimer = Timer.periodic(const Duration(seconds: 5), (t) {
+        if (DateTime.now().difference(lastChunkAt).inSeconds >= 30) {
+          t.cancel();
+          try {
+            final s = sub;
+            if (s != null) s.cancel();
+          } catch (_) {}
+          if (!completer.isCompleted) {
+            completer.completeError(TimeoutException('下载停滞(30秒无数据)'));
+          }
+        }
+      });
+      final fileSink = sink;
+      sub = resp.listen(
+        (chunk) {
+          fileSink.add(chunk);
+          downloaded += chunk.length;
+          lastChunkAt = DateTime.now();
+          onProgress?.call(downloaded, total);
+        },
+        onError: (e) {
+          if (!completer.isCompleted) completer.completeError(e);
+        },
+        onDone: () {
+          if (!completer.isCompleted) completer.complete();
+        },
+        cancelOnError: true,
+      );
+      try {
+        await completer.future;
+      } finally {
+        stallTimer?.cancel();
+        try {
+          final s = sub;
+          if (s != null) await s.cancel();
+        } catch (_) {}
       }
       await sink.flush();
       await sink.close();
+      sink = null;
 
       final fileSize = await file.length();
       if (fileSize == 0) {
@@ -467,7 +528,18 @@ class NativeDownloadService {
         return null;
       }
       return filePath;
-    } catch (_) {
+    } catch (e) {
+      // 清理资源
+      try {
+        await sink?.flush();
+      } catch (_) {}
+      try {
+        await sink?.close();
+      } catch (_) {}
+      try {
+        await resp?.drain<void>();
+      } catch (_) {}
+      debugPrint('downloadFile failed: $e, url: $url');
       return null;
     }
   }
