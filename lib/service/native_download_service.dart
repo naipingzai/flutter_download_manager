@@ -7,6 +7,8 @@ import 'dart:math';
 /// 所有平台（Linux/Android/iOS/macOS/Windows）流程完全相同：
 /// 1. 接收 URL → 2. HTTP 请求 → 3. 签名/解析 → 4. 下载媒体文件
 /// 不依赖 C++、FFI、Python 外部进程，零外部依赖。
+typedef StatusCallback = void Function(String status);
+
 class NativeDownloadService {
   static final NativeDownloadService instance = NativeDownloadService._();
   NativeDownloadService._();
@@ -85,43 +87,47 @@ class NativeDownloadService {
   // ═══ 抖音视频下载 ═══
 
   Future<Map<String, dynamic>> downloadDouyinVideo(
-      String url, String savePath) async {
+      String url, String savePath,
+      {StatusCallback? onStatus}) async {
     try {
+      onStatus?.call('🔍 解析短链接: $url');
       final realUrl = await resolveRedirect(url);
+      onStatus?.call('🔍 提取作品ID...');
       final awemeId = extractAwemeId(realUrl);
       if (awemeId.isEmpty) {
         final directId = extractAwemeId(url);
         if (directId.isEmpty) {
           return {'success': false, 'message': '无法提取视频ID: $url'};
         }
-        return await _downloadByAwemeId(directId, savePath);
+        return await _downloadByAwemeId(directId, savePath, onStatus);
       }
-      return await _downloadByAwemeId(awemeId, savePath);
+      return await _downloadByAwemeId(awemeId, savePath, onStatus);
     } catch (e) {
       return {'success': false, 'message': '下载失败: $e'};
     }
   }
 
   Future<Map<String, dynamic>> _downloadByAwemeId(
-      String awemeId, String savePath) async {
+      String awemeId, String savePath, StatusCallback? onStatus) async {
     try {
       final params = Map<String, String>.from(_douyinApiParams);
       params['aweme_id'] = awemeId;
       final aBogus = _ABogus(_pcUA).getValue(_queryFromParams(params));
 
+      onStatus?.call('📡 调用抖音API获取作品详情...');
       final detailUrl = 'https://www.douyin.com/aweme/v1/web/aweme/detail/'
           '?aweme_id=$awemeId&${_queryFromParams(params)}&a_bogus=$aBogus';
 
       final detailBody = await httpGetJson(detailUrl,
           withCookie: _douyinCookie, referer: _douyinReferer);
       if (detailBody.isEmpty) {
-        return {'success': false, 'message': 'API 请求失败'};
+        return {'success': false, 'message': 'API 请求失败(超时或网络错误)'};
       }
 
       final data = jsonDecode(detailBody) as Map<String, dynamic>;
       final awemeDetail = data['aweme_detail'] as Map<String, dynamic>?;
       if (awemeDetail == null) {
-        return {'success': false, 'message': '未找到作品数据，可能需要更新 Cookie'};
+        return {'success': false, 'message': '未找到作品数据，API返回: ${data['status_code'] ?? data['status_msg'] ?? '未知'}，可能需要设置Cookie'};
       }
 
       final desc = awemeDetail['desc'] as String? ?? '抖音视频 $awemeId';
@@ -129,6 +135,7 @@ class NativeDownloadService {
               as Map<String, dynamic>?)?['nickname'] as String?) ??
           '';
 
+      onStatus?.call('📝 解析成功: $desc');
       // 构建作者目录: savePath/作者名/
       final authorDir = author.isNotEmpty
           ? savePath +
@@ -144,7 +151,8 @@ class NativeDownloadService {
       // 优先检查 images（图片动态/图集），再检查 video
       final images = awemeDetail['images'] as List?;
       if (images != null && images.isNotEmpty) {
-        return await downloadDouyinImages(images, fileBaseName, authorDir);
+        onStatus?.call('🖼 检测到图集，共${images.length}张');
+        return await downloadDouyinImages(images, fileBaseName, authorDir, onStatus: onStatus);
       }
 
       final video = awemeDetail['video'] as Map<String, dynamic>?;
@@ -177,11 +185,13 @@ class NativeDownloadService {
         return {'success': false, 'message': '无法获取视频下载地址'};
       }
 
+      onStatus?.call('⬇️ 开始下载视频...');
       final filePath =
           await downloadFile(videoUrl, authorDir, '$fileBaseName.mp4');
 
       if (filePath != null) {
         final size = await File(filePath).length();
+        onStatus?.call('✅ 下载完成: ${desc}');
         return {
           'success': true,
           'title': desc,
@@ -197,7 +207,8 @@ class NativeDownloadService {
   }
 
   Future<Map<String, dynamic>> downloadDouyinImages(
-      List images, String title, String savePath) async {
+      List images, String title, String savePath,
+      {StatusCallback? onStatus}) async {
     await Directory(savePath).create(recursive: true);
     int count = 0;
     int videoCount = 0;
@@ -227,6 +238,7 @@ class NativeDownloadService {
       }
       if (primaryUrl == null) continue;
 
+      onStatus?.call('⬇️ 下载第${i + 1}/${images.length}张...');
       final filePath = await downloadFile(
           primaryUrl, savePath, '${title}_${i + 1}$primaryExt');
       if (filePath != null) {
@@ -245,10 +257,13 @@ class NativeDownloadService {
   // ═══ 小红书笔记下载 ═══
 
   Future<Map<String, dynamic>> downloadXhsNote(
-      String url, String savePath) async {
+      String url, String savePath,
+      {StatusCallback? onStatus}) async {
     try {
+      onStatus?.call('🔍 解析小红书链接...');
       String finalUrl = url;
       if (url.contains('xhslink.com')) {
+        onStatus?.call('🔗 跟踪短链重定向...');
         finalUrl = await resolveRedirect(url, referer: _xhsReferer);
       }
 
@@ -258,6 +273,7 @@ class NativeDownloadService {
       }
 
       final pageUrl = 'https://www.xiaohongshu.com/explore/$noteId';
+      onStatus?.call('📡 请求小红书页面...');
       final body = await httpGet(pageUrl, extraHeaders: {
         'Accept':
             'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
@@ -270,14 +286,14 @@ class NativeDownloadService {
       if (noteData.isEmpty) {
         return {'success': false, 'message': '无法解析页面数据，可能需要更新 Cookie'};
       }
-      return await _processXhsNote(noteData, noteId, savePath);
+      return await _processXhsNote(noteData, noteId, savePath, onStatus: onStatus);
     } catch (e) {
       return {'success': false, 'message': '下载失败: $e'};
     }
   }
 
   Future<Map<String, dynamic>> _processXhsNote(
-      Map<String, dynamic> data, String noteId, String savePath) async {
+      Map<String, dynamic> data, String noteId, String savePath, {StatusCallback? onStatus}) async {
     final noteData = data['note'] as Map<String, dynamic>? ??
         (data['noteDetailMap'] as Map<String, dynamic>?)?['[-1]']?['note'] ??
         data;

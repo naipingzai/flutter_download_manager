@@ -13,12 +13,8 @@ class XhsBridge {
       source: 'xhs',
       type: 'note',
       execute: (updateStatus) async {
-        updateStatus('🔍 解析小红书链接...');
-        final result = await _native.downloadXhsNote(link, savePath);
-        if (result['success'] == true) {
-          updateStatus('✅ ${result['title'] ?? '下载完成'}');
-        }
-        return result;
+        return await _native.downloadXhsNote(link, savePath,
+            onStatus: updateStatus);
       },
     );
   }
