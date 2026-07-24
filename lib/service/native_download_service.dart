@@ -512,10 +512,9 @@ class NativeDownloadService {
       try {
         await completer.future;
       } finally {
-        stallTimer?.cancel();
+        stallTimer.cancel();
         try {
-          final s = sub;
-          if (s != null) await s.cancel();
+          await sub.cancel();
         } catch (_) {}
       }
       await sink.flush();
