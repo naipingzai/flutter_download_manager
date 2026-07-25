@@ -244,8 +244,21 @@ class NativeDownloadService {
       if (primaryUrl == null) continue;
 
       onStatus?.call('⬇️ 下载第${i + 1}/${images.length}张...');
-      final filePath = await downloadFile(
-          primaryUrl, savePath, '${title}_${i + 1}$primaryExt');
+      // 兑底：单张图最多 60s 超时，避免单点卡住整批图集
+      String? filePath;
+      try {
+        filePath = await downloadFile(
+                primaryUrl, savePath, '${title}_${i + 1}$primaryExt')
+            .timeout(const Duration(seconds: 60), onTimeout: () {
+          debugPrint('downloadDouyinImages: 第${i + 1}张 60s 超时');
+          onStatus?.call('⚠️ 第${i + 1}张超时，跳过');
+          return null;
+        });
+      } catch (e) {
+        debugPrint('downloadDouyinImages: 第${i + 1}张异常: $e');
+        onStatus?.call('⚠️ 第${i + 1}张失败: $e');
+        filePath = null;
+      }
       if (filePath != null) {
         count++;
         if (primaryExt == '.mp4') videoCount++;
