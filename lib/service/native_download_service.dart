@@ -14,8 +14,10 @@ class NativeDownloadService {
   static final NativeDownloadService instance = NativeDownloadService._();
   NativeDownloadService._();
 
+  // 共享 HttpClient（只用于短请求如解析 API，不用于下载）
+  // 下载使用独立 HttpClient，避免连接池污染
   final HttpClient _client = HttpClient()
-    ..connectionTimeout = const Duration(seconds: 30);
+    ..connectionTimeout = const Duration(seconds: 15);
 
   String _douyinCookie = '';
   String _xhsCookie = '';
@@ -415,7 +417,7 @@ class NativeDownloadService {
       req.headers.set('User-Agent', _pcUA);
       if (referer != null) req.headers.set('Referer', referer);
       final resp = await req.close().timeout(const Duration(seconds: 15));
-      await resp.drain();
+      // 不 drain — resp.redirects 已包含所有重定向信息
       if (resp.redirects.isNotEmpty) {
         return resp.redirects.last.location.toString();
       }
@@ -449,11 +451,15 @@ class NativeDownloadService {
     }
   }
 
-  /// 下载文件，支持进度回调
+  /// 下载文件，支持进度回调（每次使用独立 HttpClient 避免连接池污染）
   /// [onProgress]: (downloadedBytes, totalBytes) 回调
   /// 返回文件路径，失败返回 null
   Future<String?> downloadFile(String url, String savePath, String filename,
       {void Function(int downloaded, int total)? onProgress}) async {
+    // 独立 HttpClient — 不复用共享 _client 的连接池，避免僵尸连接污染
+    final client = HttpClient()
+      ..connectionTimeout = const Duration(seconds: 15)
+      ..idleTimeout = const Duration(seconds: 10);
     HttpClientRequest? req;
     HttpClientResponse? resp;
     IOSink? sink;
@@ -461,28 +467,27 @@ class NativeDownloadService {
       await Directory(savePath).create(recursive: true);
       final uri = Uri.parse(url);
 
-      // 建立连接超时
-      req = await _client.getUrl(uri).timeout(
+      // 建立连接超时 15s
+      req = await client.getUrl(uri).timeout(
             const Duration(seconds: 15),
             onTimeout: () => throw TimeoutException('建立连接超时'),
           );
       req.headers.set('User-Agent', _pcUA);
-      // 不再强制 Range 头，避免部分 CDN 返回 416
+      // 不设 Range 头，避免部分 CDN 返回 416
       req.headers.set(
           'Referer',
           url.contains('xhscdn.com') || url.contains('xiaohongshu')
               ? _xhsReferer
               : _douyinReferer);
 
-      // 等待响应超时
+      // 等待响应超时 20s
       resp = await req.close().timeout(
-            const Duration(seconds: 30),
+            const Duration(seconds: 20),
             onTimeout: () => throw TimeoutException('等待响应超时'),
           );
+      // 状态码不对直接返回，不 drain（防止半关闭连接挂起）
       if (resp.statusCode != 200 && resp.statusCode != 206) {
-        try {
-          await resp.drain<void>();
-        } catch (_) {}
+        debugPrint('downloadFile: HTTP ${resp.statusCode} $url');
         return null;
       }
 
@@ -516,20 +521,20 @@ class NativeDownloadService {
       final file = File(filePath);
       sink = file.openWrite();
       int downloaded = 0;
-      // 跟踪最近一次接收数据的时间，若 30 秒无新数据则视为卡住
       DateTime lastChunkAt = DateTime.now();
       Timer? stallTimer;
       final completer = Completer<void>();
       StreamSubscription<List<int>>? sub;
-      stallTimer = Timer.periodic(const Duration(seconds: 5), (t) {
-        if (DateTime.now().difference(lastChunkAt).inSeconds >= 30) {
+      // stall timer 减为 15s（原 30s）— 更敏感地发现下载停滞
+      stallTimer = Timer.periodic(const Duration(seconds: 3), (t) {
+        if (DateTime.now().difference(lastChunkAt).inSeconds >= 15) {
           t.cancel();
           try {
             final s = sub;
             if (s != null) s.cancel();
           } catch (_) {}
           if (!completer.isCompleted) {
-            completer.completeError(TimeoutException('下载停滞(30秒无数据)'));
+            completer.completeError(TimeoutException('下载停滞(15秒无数据)'));
           }
         }
       });
@@ -568,17 +573,20 @@ class NativeDownloadService {
       }
       return filePath;
     } catch (e) {
+      debugPrint('downloadFile failed: $e, url: $url');
+      return null;
+    } finally {
+      // 强制关闭 client，释放所有底层 socket
+      try {
+        client.close(force: true);
+      } catch (_) {}
       // 清理资源
-      // 注意：不要在这里 await resp?.drain()，否则会因底层连接半关闭而无限等待
       try {
         await sink?.flush();
       } catch (_) {}
       try {
         await sink?.close();
       } catch (_) {}
-      // resp 不主动 drain，依赖 GC 或下一次 _client.getUrl 时复用连接时由 HttpClient 处理
-      debugPrint('downloadFile failed: $e, url: $url');
-      return null;
     }
   }
 
