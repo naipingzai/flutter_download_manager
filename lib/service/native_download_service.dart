@@ -423,7 +423,7 @@ class NativeDownloadService {
 
       // 建立连接超时
       req = await _client.getUrl(uri).timeout(
-            const Duration(seconds: 30),
+            const Duration(seconds: 15),
             onTimeout: () => throw TimeoutException('建立连接超时'),
           );
       req.headers.set('User-Agent', _pcUA);
@@ -436,7 +436,7 @@ class NativeDownloadService {
 
       // 等待响应超时
       resp = await req.close().timeout(
-            const Duration(seconds: 60),
+            const Duration(seconds: 30),
             onTimeout: () => throw TimeoutException('等待响应超时'),
           );
       if (resp.statusCode != 200 && resp.statusCode != 206) {
@@ -529,15 +529,14 @@ class NativeDownloadService {
       return filePath;
     } catch (e) {
       // 清理资源
+      // 注意：不要在这里 await resp?.drain()，否则会因底层连接半关闭而无限等待
       try {
         await sink?.flush();
       } catch (_) {}
       try {
         await sink?.close();
       } catch (_) {}
-      try {
-        await resp?.drain<void>();
-      } catch (_) {}
+      // resp 不主动 drain，依赖 GC 或下一次 _client.getUrl 时复用连接时由 HttpClient 处理
       debugPrint('downloadFile failed: $e, url: $url');
       return null;
     }
