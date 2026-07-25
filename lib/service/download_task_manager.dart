@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'package:flutter/foundation.dart';
 import '../model/download_task.dart';
 import 'database_service.dart';
@@ -14,13 +13,8 @@ class DownloadTaskManager extends ChangeNotifier {
   final List<DownloadTask> _tasks = [];
   bool _initialized = false;
 
+  /// 全部任务（按插入顺序倒序：最新在前）
   List<DownloadTask> get tasks => List<DownloadTask>.from(_tasks);
-  List<DownloadTask> get downloadingTasks =>
-      _tasks.where((t) => t.status == TaskStatus.downloading).toList();
-  List<DownloadTask> get completedTasks =>
-      _tasks.where((t) => t.status == TaskStatus.completed).toList();
-  List<DownloadTask> get failedTasks =>
-      _tasks.where((t) => t.status == TaskStatus.failed).toList();
 
   /// 初始化，从数据库加载任务
   Future<void> init() async {
@@ -51,25 +45,6 @@ class DownloadTaskManager extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// 更新进度
-  Future<void> updateProgress(
-    String id,
-    int downloadedSize,
-    int totalSize,
-    String title,
-  ) async {
-    await _db.updateProgress(id, downloadedSize, totalSize, title);
-    final index = _tasks.indexWhere((t) => t.id == id);
-    if (index >= 0) {
-      _tasks[index] = _tasks[index].copyWith(
-        downloadedSize: downloadedSize,
-        totalSize: totalSize,
-        title: title,
-      );
-    }
-    notifyListeners();
-  }
-
   /// 删除任务
   Future<void> removeTask(String id) async {
     await _db.deleteById(id);
@@ -94,26 +69,5 @@ class DownloadTaskManager extends ChangeNotifier {
   DownloadTask? findByUrl(String url) {
     final index = _tasks.indexWhere((t) => t.url == url);
     return index >= 0 ? _tasks[index] : null;
-  }
-
-  /// 递增重试次数
-  Future<void> incrementRetry(String id) async {
-    await _db.incrementRetry(id);
-    final index = _tasks.indexWhere((t) => t.id == id);
-    if (index >= 0) {
-      _tasks[index] =
-          _tasks[index].copyWith(retryCount: _tasks[index].retryCount + 1);
-    }
-    notifyListeners();
-  }
-
-  /// 清理旧任务
-  Future<void> cleanupOldTasks({int daysToKeep = 30}) async {
-    await _db.cleanupOldTasks(daysToKeep: daysToKeep);
-    final loaded = await _db.getAllTasks();
-    _tasks
-      ..clear()
-      ..addAll(loaded);
-    notifyListeners();
   }
 }

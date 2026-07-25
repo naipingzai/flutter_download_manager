@@ -20,12 +20,6 @@ class NativeDownloadService {
   String _douyinCookie = '';
   String _xhsCookie = '';
 
-  // 任务取消控制
-  final Map<String, bool> _cancelled = {};
-  void cancelTask(String id) => _cancelled[id] = true;
-  void uncancelTask(String id) => _cancelled.remove(id);
-  bool isCancelled(String id) => _cancelled[id] == true;
-
   static const _pcUA =
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
       '(KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36';
@@ -66,29 +60,14 @@ class NativeDownloadService {
   void setDouyinCookie(String cookie) => _douyinCookie = cookie;
   void setXhsCookie(String cookie) => _xhsCookie = cookie;
 
-  /// 通用 HTTP GET
-  Future<String> httpGet(String url,
-      {Map<String, String>? extraHeaders}) async {
-    try {
-      final uri = Uri.parse(url);
-      final req = await _client.getUrl(uri).timeout(
-            const Duration(seconds: 30),
-            onTimeout: () => throw TimeoutException('请求超时'),
-          );
-      req.headers.set('User-Agent', _pcUA);
-      req.followRedirects = true;
-      if (extraHeaders != null) extraHeaders.forEach(req.headers.set);
-      final resp = await req.close().timeout(const Duration(seconds: 30));
-      return await resp.transform(utf8.decoder).join();
-    } catch (e) {
-      return '';
-    }
-  }
-
   // ═══ 抖音视频下载 ═══
 
-  Future<Map<String, dynamic>> downloadDouyinVideo(String url, String savePath,
-      {StatusCallback? onStatus}) async {
+  Future<Map<String, dynamic>> downloadDouyinVideo(
+    String url,
+    String savePath, {
+    StatusCallback? onStatus,
+    void Function(int downloaded, int total)? onProgress,
+  }) async {
     try {
       onStatus?.call('🔍 解析短链接: $url');
       final realUrl = await resolveRedirect(url);
@@ -99,16 +78,21 @@ class NativeDownloadService {
         if (directId.isEmpty) {
           return {'success': false, 'message': '无法提取视频ID: $url'};
         }
-        return await _downloadByAwemeId(directId, savePath, onStatus);
+        return await _downloadByAwemeId(
+            directId, savePath, onStatus, onProgress);
       }
-      return await _downloadByAwemeId(awemeId, savePath, onStatus);
+      return await _downloadByAwemeId(awemeId, savePath, onStatus, onProgress);
     } catch (e) {
       return {'success': false, 'message': '下载失败: $e'};
     }
   }
 
   Future<Map<String, dynamic>> _downloadByAwemeId(
-      String awemeId, String savePath, StatusCallback? onStatus) async {
+    String awemeId,
+    String savePath,
+    StatusCallback? onStatus,
+    void Function(int downloaded, int total)? onProgress,
+  ) async {
     try {
       final params = Map<String, String>.from(_douyinApiParams);
       params['aweme_id'] = awemeId;
@@ -157,7 +141,7 @@ class NativeDownloadService {
       if (images != null && images.isNotEmpty) {
         onStatus?.call('🖼 检测到图集，共${images.length}张');
         return await downloadDouyinImages(images, fileBaseName, authorDir,
-            onStatus: onStatus);
+            onStatus: onStatus, onProgress: onProgress);
       }
 
       final video = awemeDetail['video'] as Map<String, dynamic>?;
@@ -191,11 +175,13 @@ class NativeDownloadService {
       }
 
       onStatus?.call('⬇️ 开始下载视频...');
-      final filePath =
-          await downloadFile(videoUrl, authorDir, '$fileBaseName.mp4');
+      final filePath = await downloadFile(
+          videoUrl, authorDir, '$fileBaseName.mp4',
+          onProgress: onProgress);
 
       if (filePath != null) {
         final size = await File(filePath).length();
+        if (onProgress != null) onProgress(size, size);
         onStatus?.call('✅ 下载完成: ${desc}');
         return {
           'success': true,
@@ -212,12 +198,18 @@ class NativeDownloadService {
   }
 
   Future<Map<String, dynamic>> downloadDouyinImages(
-      List images, String title, String savePath,
-      {StatusCallback? onStatus}) async {
+    List images,
+    String title,
+    String savePath, {
+    StatusCallback? onStatus,
+    void Function(int downloaded, int total)? onProgress,
+  }) async {
     await Directory(savePath).create(recursive: true);
     int count = 0;
     int videoCount = 0;
-    for (var i = 0; i < images.length; i++) {
+    final total = images.length;
+    int baseDone = 0;
+    for (var i = 0; i < total; i++) {
       final img = images[i] as Map<String, dynamic>;
 
       // 抖音动图 (Live Photo) 含 video 字段，应下载为 mp4
@@ -243,12 +235,22 @@ class NativeDownloadService {
       }
       if (primaryUrl == null) continue;
 
-      onStatus?.call('⬇️ 下载第${i + 1}/${images.length}张...');
+      onStatus?.call('⬇️ 下载第${i + 1}/$total张...');
       // 兑底：单张图最多 60s 超时，避免单点卡住整批图集
+      // 总进度 = (已完成的张数 + 本张已下载字节/本张总字节) / 总张数
+      int lastLocal = 0;
+      void bridge(int downloaded, int bytesTotal) {
+        if (onProgress == null) return;
+        if (downloaded == lastLocal) return;
+        lastLocal = downloaded;
+        onProgress(baseDone + downloaded, total);
+      }
+
       String? filePath;
       try {
         filePath = await downloadFile(
-                primaryUrl, savePath, '${title}_${i + 1}$primaryExt')
+                primaryUrl, savePath, '${title}_${i + 1}$primaryExt',
+                onProgress: total > 0 ? bridge : null)
             .timeout(const Duration(seconds: 60), onTimeout: () {
           debugPrint('downloadDouyinImages: 第${i + 1}张 60s 超时');
           onStatus?.call('⚠️ 第${i + 1}张超时，跳过');
@@ -263,6 +265,8 @@ class NativeDownloadService {
         count++;
         if (primaryExt == '.mp4') videoCount++;
       }
+      baseDone += 1;
+      if (onProgress != null) onProgress(baseDone, total);
     }
     final msg = videoCount > 0
         ? '$count 项 (含 $videoCount 个动图)'
@@ -274,8 +278,12 @@ class NativeDownloadService {
 
   // ═══ 小红书笔记下载 ═══
 
-  Future<Map<String, dynamic>> downloadXhsNote(String url, String savePath,
-      {StatusCallback? onStatus}) async {
+  Future<Map<String, dynamic>> downloadXhsNote(
+    String url,
+    String savePath, {
+    StatusCallback? onStatus,
+    void Function(int downloaded, int total)? onProgress,
+  }) async {
     try {
       onStatus?.call('🔍 解析小红书链接...');
       String finalUrl = url;
@@ -291,28 +299,33 @@ class NativeDownloadService {
 
       final pageUrl = 'https://www.xiaohongshu.com/explore/$noteId';
       onStatus?.call('📡 请求小红书页面...');
-      final body = await httpGet(pageUrl, extraHeaders: {
-        'Accept':
-            'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-        'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
-        'Referer': 'https://www.xiaohongshu.com/explore',
-        if (_xhsCookie.isNotEmpty) 'Cookie': _xhsCookie,
-      });
+      final body = await httpGetJson(pageUrl,
+          withCookie: _xhsCookie,
+          referer: _xhsReferer,
+          extraHeaders: {
+            'Accept':
+                'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+            'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+          });
 
       final noteData = _parseXhsInitialState(body);
       if (noteData.isEmpty) {
         return {'success': false, 'message': '无法解析页面数据，可能需要更新 Cookie'};
       }
       return await _processXhsNote(noteData, noteId, savePath,
-          onStatus: onStatus);
+          onStatus: onStatus, onProgress: onProgress);
     } catch (e) {
       return {'success': false, 'message': '下载失败: $e'};
     }
   }
 
   Future<Map<String, dynamic>> _processXhsNote(
-      Map<String, dynamic> data, String noteId, String savePath,
-      {StatusCallback? onStatus}) async {
+    Map<String, dynamic> data,
+    String noteId,
+    String savePath, {
+    StatusCallback? onStatus,
+    void Function(int downloaded, int total)? onProgress,
+  }) async {
     final noteData = data['note'] as Map<String, dynamic>? ??
         (data['noteDetailMap'] as Map<String, dynamic>?)?['[-1]']?['note'] ??
         data;
@@ -342,8 +355,9 @@ class NativeDownloadService {
     if (noteType == 'video' && video != null) {
       final videoUrl = _extractXhsVideoUrl(video);
       if (videoUrl.isNotEmpty) {
-        final filePath =
-            await downloadFile(videoUrl, authorDir, '$fileBaseName.mp4');
+        final filePath = await downloadFile(
+            videoUrl, authorDir, '$fileBaseName.mp4',
+            onProgress: onProgress);
         if (filePath != null)
           return {
             'success': true,
@@ -356,22 +370,32 @@ class NativeDownloadService {
 
     if (imageList.isNotEmpty) {
       int count = 0;
-      for (var i = 0; i < imageList.length; i++) {
+      final total = imageList.length;
+      int baseDone = 0;
+      for (var i = 0; i < total; i++) {
         final img = imageList[i] as Map<String, dynamic>?;
         if (img == null) continue;
         final imgUrl =
             img['urlDefault']?.toString() ?? img['url']?.toString() ?? '';
         if (imgUrl.isEmpty) continue;
+
+        int lastLocal = 0;
+        void bridge(int downloaded, int bytesTotal) {
+          if (onProgress == null) return;
+          if (downloaded == lastLocal) return;
+          lastLocal = downloaded;
+          onProgress(baseDone + downloaded, total);
+        }
+
         final fp = await downloadFile(
-            imgUrl, authorDir, '${fileBaseName}_${i + 1}.jpg');
+            imgUrl, authorDir, '${fileBaseName}_${i + 1}.jpg',
+            onProgress: total > 0 ? bridge : null);
         if (fp != null) count++;
+        baseDone += 1;
+        if (onProgress != null) onProgress(baseDone, total);
       }
       return count > 0
-          ? {
-              'success': true,
-              'title': title,
-              'message': '已保存: $count/${imageList.length} 张'
-            }
+          ? {'success': true, 'title': title, 'message': '已保存: $count/$total 张'}
           : {'success': false, 'message': '图片下载失败'};
     }
 
@@ -402,7 +426,9 @@ class NativeDownloadService {
   }
 
   Future<String> httpGetJson(String url,
-      {String? withCookie, String? referer}) async {
+      {String? withCookie,
+      String? referer,
+      Map<String, String>? extraHeaders}) async {
     try {
       final uri = Uri.parse(url);
       final req = await _client.getUrl(uri).timeout(
@@ -414,6 +440,7 @@ class NativeDownloadService {
       if (withCookie != null && withCookie.isNotEmpty) {
         req.headers.set('Cookie', withCookie);
       }
+      if (extraHeaders != null) extraHeaders.forEach(req.headers.set);
       final resp = await req.close().timeout(const Duration(seconds: 30));
       if (resp.statusCode != 200) return '';
       return await resp.transform(utf8.decoder).join();
@@ -635,20 +662,6 @@ class NativeDownloadService {
   String _queryFromParams(Map<String, String> params) => params.entries
       .map((e) => '${e.key}=${Uri.encodeQueryComponent(e.value)}')
       .join('&');
-
-  /// 检测链接信息（可作为「查看作者作品」的入口）
-  /// 签名 HTTP GET — 供 DouyinApiService 使用
-  Future<String> httpGetSigned(String baseUrl,
-      {Map<String, String>? extraParams, String? referer}) async {
-    final params = Map<String, String>.from(_douyinApiParams);
-    if (extraParams != null) params.addAll(extraParams);
-    final aBogus = _ABogus(_pcUA).getValue(_queryFromParams(params));
-    final url = '$baseUrl?${_queryFromParams(params)}&a_bogus=$aBogus';
-    return await httpGetJson(url,
-        withCookie: _douyinCookie, referer: referer ?? _douyinReferer);
-  }
-
-  void dispose() => _client.close();
 }
 
 // ═══ ABogus 签名算法 (从 Python aBogus.py 移植) ═══

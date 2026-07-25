@@ -75,42 +75,6 @@ class DatabaseService {
     });
   }
 
-  Future<DownloadTask?> getById(String id) async {
-    await _ensureInit();
-    return _lock.synchronized(() async {
-      final i = _tasks.indexWhere((t) => t.id == id);
-      return i >= 0 ? _tasks[i] : null;
-    });
-  }
-
-  Future<DownloadTask?> findByUrl(String url) async {
-    await _ensureInit();
-    return _lock.synchronized(() async {
-      final i = _tasks.indexWhere((t) => t.url == url);
-      return i >= 0 ? _tasks[i] : null;
-    });
-  }
-
-  Future<List<DownloadTask>> getTasksBySource(String source) async {
-    await _ensureInit();
-    return _lock.synchronized(() async {
-      return List.unmodifiable(
-          _tasks.where((t) => t.source == source).toList());
-    });
-  }
-
-  Future<List<DownloadTask>> getPendingTasks() async {
-    await _ensureInit();
-    return _lock.synchronized(() async {
-      return List.unmodifiable(_tasks
-          .where((t) =>
-              t.status == TaskStatus.queued ||
-              t.status == TaskStatus.downloading ||
-              t.status == TaskStatus.paused)
-          .toList());
-    });
-  }
-
   Future<void> incrementRetry(String id) async {
     await _ensureInit();
     await _lock.synchronized(() async {

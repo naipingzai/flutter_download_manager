@@ -12,9 +12,9 @@ class XhsBridge {
       savePath: savePath,
       source: 'xhs',
       type: 'note',
-      execute: (updateStatus) async {
+      execute: (updateStatus, updateProgress) async {
         return await _native.downloadXhsNote(link, savePath,
-            onStatus: updateStatus);
+            onStatus: updateStatus, onProgress: updateProgress);
       },
     );
   }

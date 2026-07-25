@@ -12,9 +12,9 @@ class DouyinBridge {
       savePath: savePath,
       source: 'douyin',
       type: 'video',
-      execute: (updateStatus) async {
+      execute: (updateStatus, updateProgress) async {
         return await _native.downloadDouyinVideo(link, savePath,
-            onStatus: updateStatus);
+            onStatus: updateStatus, onProgress: updateProgress);
       },
     );
   }

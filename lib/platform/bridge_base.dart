@@ -27,7 +27,8 @@ abstract class BridgeBase {
     required String source,
     required String type,
     required Future<Map<String, dynamic>> Function(
-            void Function(String status) updateStatus)
+            void Function(String status) updateStatus,
+            void Function(int downloaded, int total) updateProgress)
         execute,
   }) async {
     // 去重：如果同 URL 的任务已完成或正在下载，不重复创建
@@ -61,8 +62,30 @@ abstract class BridgeBase {
       }
     }
 
+    // 节流进度更新：避免频繁 notifyListeners
+    DateTime lastProgressAt = DateTime.now();
+    int lastTotal = -1;
+    void updateProgress(int downloaded, int total) {
+      final now = DateTime.now();
+      // 1) 完成事件(total 首次出现或完成)立即更新 2) 节流 200ms
+      final isComplete = total > 0 && downloaded >= total;
+      final shouldUpdate = isComplete ||
+          total != lastTotal ||
+          now.difference(lastProgressAt).inMilliseconds > 200;
+      if (!shouldUpdate) return;
+      lastProgressAt = now;
+      lastTotal = total;
+      final cur = _taskManager.getById(taskId);
+      if (cur != null) {
+        _taskManager.updateTask(cur.copyWith(
+          downloadedSize: downloaded,
+          totalSize: total,
+        ));
+      }
+    }
+
     try {
-      final result = await execute(updateStatus);
+      final result = await execute(updateStatus, updateProgress);
 
       // 检查任务状态
       final cur = _taskManager.getById(taskId);
@@ -79,9 +102,10 @@ abstract class BridgeBase {
       final title = result['title']?.toString() ?? link;
 
       if (success) {
-        var size = result['size'] as int? ?? 0;
+        var size = result['size'] as int? ?? cur.totalSize;
         final filePath = result['path']?.toString() ?? '';
-        if (size == 0 && filePath.isEmpty) {
+        // 图集等多文件场景：result.size 不可靠，回退到统计目录
+        if (size <= 0 && filePath.isEmpty) {
           try {
             final dir = Directory(savePath);
             if (await dir.exists()) {
