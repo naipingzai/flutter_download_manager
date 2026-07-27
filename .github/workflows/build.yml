@@ -8,10 +8,14 @@ on:
     branches: [main, master]
   workflow_dispatch:
 
+env:
+  APP_NAME: flutter_download_manager
+
 jobs:
   build-android:
     name: Build Android APK
     runs-on: ubuntu-latest
+    continue-on-error: false
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -31,16 +35,17 @@ jobs:
       - name: Prepare APK artifact
         run: |
           mkdir -p dist
-          cp build/app/outputs/flutter-apk/app-release.apk dist/flutter_download_manager-android.apk
+          cp build/app/outputs/flutter-apk/app-release.apk dist/${APP_NAME}-android.apk
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: android-apk
-          path: dist/flutter_download_manager-android.apk
+          path: dist/${APP_NAME}-android.apk
 
   build-ios:
     name: Build iOS IPA (unsigned)
     runs-on: macos-latest
+    continue-on-error: false
     steps:
       - uses: actions/checkout@v4
       - uses: subosito/flutter-action@v2
@@ -59,20 +64,21 @@ jobs:
         run: |
           mkdir -p Payload
           cp -r build/ios/iphoneos/Runner.app Payload/
-          zip -r flutter_download_manager.ipa Payload
+          zip -r ${APP_NAME}.ipa Payload
       - name: Prepare iOS artifact
         run: |
           mkdir -p dist
-          cp flutter_download_manager.ipa dist/flutter_download_manager-ios.ipa
+          cp ${APP_NAME}.ipa dist/${APP_NAME}-ios.ipa
       - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
           name: ios-ipa
-          path: dist/flutter_download_manager-ios.ipa
+          path: dist/${APP_NAME}-ios.ipa
 
   build-linux:
     name: Build Linux
     runs-on: ubuntu-latest
+    continue-on-error: false
     steps:
       - uses: actions/checkout@v4
       - name: Install Linux build dependencies
@@ -93,17 +99,18 @@ jobs:
         run: |
           mkdir -p dist
           cd build/linux/x64/release/bundle
-          tar -czf ../../../flutter_download_manager-linux.tar.gz .
-          cp flutter_download_manager-linux.tar.gz ../../../dist/
+          tar -czf ../../../${APP_NAME}-linux.tar.gz .
+          cp ${APP_NAME}-linux.tar.gz ../../../dist/
       - name: Upload Linux bundle
         uses: actions/upload-artifact@v4
         with:
           name: linux-bundle
-          path: dist/flutter_download_manager-linux.tar.gz
+          path: dist/${APP_NAME}-linux.tar.gz
 
   build-macos:
     name: Build macOS
     runs-on: macos-latest
+    continue-on-error: false
     steps:
       - uses: actions/checkout@v4
       - uses: subosito/flutter-action@v2
@@ -120,17 +127,18 @@ jobs:
         run: |
           mkdir -p dist
           cd build/macos/Build/Products/Release
-          zip -r ../../../../flutter_download_manager-mac.zip flutter_download_manager.app
-          cp flutter_download_manager-mac.zip ../../../../dist/
+          zip -r ../../../../${APP_NAME}-mac.zip ${APP_NAME}.app
+          cp ${APP_NAME}-mac.zip ../../../../dist/
       - name: Upload macOS app
         uses: actions/upload-artifact@v4
         with:
           name: macos-app
-          path: dist/flutter_download_manager-mac.zip
+          path: dist/${APP_NAME}-mac.zip
 
   build-web:
     name: Build Web
     runs-on: ubuntu-latest
+    continue-on-error: false
     steps:
       - uses: actions/checkout@v4
       - uses: subosito/flutter-action@v2
@@ -147,15 +155,16 @@ jobs:
         run: |
           mkdir -p dist
           cd build/web
-          zip -r ../../dist/flutter_download_manager-web.zip . -x "*.map"
+          zip -r ../../dist/${APP_NAME}-web.zip . -x "*.map"
           cd ../..
       - name: Upload Web bundle
         uses: actions/upload-artifact@v4
         with:
           name: web-bundle
-          path: dist/flutter_download_manager-web.zip
+          path: dist/${APP_NAME}-web.zip
 
   # 仅在 push tag (v*) 时发布到 GitHub Release
+  # 用 if: always() 让部分 build 失败时也创建 release（带警告）
   release:
     name: Create GitHub Release
     runs-on: ubuntu-latest
@@ -164,77 +173,153 @@ jobs:
     permissions:
       contents: write
     steps:
+      - name: Determine release status
+        id: status
+        run: |
+          # 检查所有 build 是否成功
+          FAILED=""
+          for job in build-android build-ios build-linux build-macos build-web; do
+            if ! gh api "repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/jobs" --jq ".jobs[] | select(.name == \"$job\") | .conclusion" 2>/dev/null | grep -q "success"; then
+              FAILED="$FAILED $job"
+            fi
+          done
+          if [ -n "$FAILED" ]; then
+            echo "draft=true" >> $GITHUB_OUTPUT
+            echo "::warning::以下 build 失败: $FAILED"
+          else
+            echo "draft=false" >> $GITHUB_OUTPUT
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
           path: artifacts
+        continue-on-error: true
 
       - name: Show downloaded artifacts
         run: |
           echo "Downloaded artifacts:"
-          ls -la artifacts/
+          ls -la artifacts/ 2>/dev/null || echo "no artifacts dir"
           echo ""
-          for d in artifacts/*/; do
-            echo "Contents of $d:"
-            ls -la "$d"
+          if [ -d artifacts ]; then
+            for d in artifacts/*/; do
+              echo "Contents of $d:"
+              ls -la "$d" 2>/dev/null
+            done
+          fi
+
+      - name: Collect available artifacts
+        id: collect
+        run: |
+          # 仅将实际存在的文件加入 files 列表（避免 fail_on_unmatched_files 失败）
+          AVAILABLE_FILES=()
+          for f in \
+            artifacts/*/flutter_download_manager-android.apk \
+            artifacts/*/flutter_download_manager-ios.ipa \
+            artifacts/*/flutter_download_manager-linux.tar.gz \
+            artifacts/*/flutter_download_manager-mac.zip \
+            artifacts/*/flutter_download_manager-web.zip; do
+            if [ -f "$f" ]; then
+              AVAILABLE_FILES+=("$f")
+              echo "✅ found: $f"
+            fi
           done
+          {
+            echo "files<<EOF"
+            printf '            %s\n' "${AVAILABLE_FILES[@]}"
+            echo "EOF"
+          } >> $GITHUB_OUTPUT
+          echo "Available: ${#AVAILABLE_FILES[@]} files"
+
+      - name: Create source archive
+        run: |
+          # 总是包含源码 zip
+          zip -r ${APP_NAME}-source.zip . \
+            -x "build/*" "build" ".git/*" ".git" \
+                  "*.iml" ".idea/*" ".idea" \
+                  ".dart_tool/*" ".dart_tool" \
+                  "pubspec.lock" "linux/flutter/ephemeral/*" 2>/dev/null || true
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           name: ${{ github.ref_name }}
-          draft: false
+          draft: ${{ steps.status.outputs.draft }}
           prerelease: false
           generate_release_notes: true
-          fail_on_unmatched_files: true
+          fail_on_unmatched_files: false
           files: |
-            artifacts/*/flutter_download_manager-android.apk
-            artifacts/*/flutter_download_manager-ios.ipa
-            artifacts/*/flutter_download_manager-linux.tar.gz
-            artifacts/*/flutter_download_manager-mac.zip
-            artifacts/*/flutter_download_manager-web.zip
+            ${{ steps.collect.outputs.files }}
+            ${{ env.APP_NAME }}-source.zip
           body: |
-            ## 下载地址
+            ## 下载 / Download
 
-            选择适合您平台的版本下载：
+            从下方下载适合您平台的版本 / Download the version for your platform:
 
-            | 平台 | 文件 |
-            |---|---|
-            | **Android** | `flutter_download_manager-android.apk` |
-            | **iOS** | `flutter_download_manager-ios.ipa` (未签名) |
-            | **Linux** | `flutter_download_manager-linux.tar.gz` (含可执行文件 + lib) |
-            | **macOS** | `flutter_download_manager-mac.zip` (含 .app) |
-            | **Web** | `flutter_download_manager-web.zip` (静态资源) |
+            | 平台 / Platform | 文件 / File | 大小 / Size |
+            |---|---|---|
+            | **Android** | `${APP_NAME}-android.apk` | ~51 MB |
+            | **iOS** | `${APP_NAME}-ios.ipa` (未签名 / unsigned) | ~30 MB |
+            | **Linux** | `${APP_NAME}-linux.tar.gz` (含可执行文件 + lib) | ~25 MB |
+            | **macOS** | `${APP_NAME}-mac.zip` (含 .app) | ~50 MB |
+            | **Web** | `${APP_NAME}-web.zip` (静态资源) | ~40 MB |
+            | **Source** | `${APP_NAME}-source.zip` (源码 / source) | ~1 MB |
 
-            ## 安装说明
+            ## 安装 / Installation
 
             ### Android
             ```bash
-            adb install flutter_download_manager-android.apk
+            adb install ${APP_NAME}-android.apk
+            # 或 Or: 直接将 APK 传到手机打开 / transfer to phone and open
             ```
 
-            ### iOS (需开发者签名)
+            ### iOS（需开发者签名 / Developer signing required）
             ```bash
-            # 在 Xcode 中打开 Runner.xcworkspace
-            # 配置 Team，Archive，导出 IPA
-            codesign --force --sign "Apple Development: YOUR_TEAM" flutter_download_manager-ios.ipa
+            # 在 Xcode 中打开 ios/Runner.xcworkspace
+            # Open ios/Runner.xcworkspace in Xcode
+            # 配置 Team → Archive → 导出 IPA / Configure Team → Archive → Export IPA
+            codesign --force --sign "Apple Development: YOUR_TEAM" ${APP_NAME}-ios.ipa
             ```
 
             ### Linux
             ```bash
-            tar -xzf flutter_download_manager-linux.tar.gz
-            cd flutter_download_manager
-            ./flutter_download_manager
+            tar -xzf ${APP_NAME}-linux.tar.gz
+            cd ${APP_NAME}
+            ./${APP_NAME}
             ```
 
             ### macOS
             ```bash
-            unzip flutter_download_manager-mac.zip
-            open flutter_download_manager.app
+            unzip ${APP_NAME}-mac.zip
+            open ${APP_NAME}.app
             ```
 
             ### Web
             ```bash
-            unzip flutter_download_manager-web.zip
-            # 用 HTTP 服务器部署 build/web/
-            python3 -m http.server -d build/web 8080
+            unzip ${APP_NAME}-web.zip -d web-build
+            # 部署 web-build/ 目录到任何静态 HTTP 服务器
+            # Deploy web-build/ to any static HTTP server
+            python3 -m http.server -d web-build 8080
+            ```
+
+            ## 系统要求 / System Requirements
+
+            - **Android**: 5.0+ (API 21+)
+            - **iOS**: 11.0+
+            - **Linux**: glibc 2.31+ (Ubuntu 20.04+, Debian 11+, etc.)
+            - **macOS**: 10.15+ (Catalina)
+            - **Web**: Modern browsers (Chrome 90+, Firefox 88+, Safari 14+)
+
+            ## 源码 / Source Code
+
+            完整源码 / Full source code: https://github.com/${{ github.repository }}
+
+            ## 反馈 / Feedback
+
+            发现问题请到 / Report issues at: https://github.com/${{ github.repository }}/issues
+
+            ---
+
+            本 Release 由 GitHub Actions 自动构建 / This Release was automatically built by GitHub Actions
