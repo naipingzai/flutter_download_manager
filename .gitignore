@@ -70,7 +70,7 @@ app.*.map.json
 download_manager_data/
 
 # Web (not targeting)
-/web/
+# /web/  # web 平台目录被跟踪，flutter build web 需要
 devtools_options.yaml
 
 # Build reports
