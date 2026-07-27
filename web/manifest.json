@@ -1,11 +1,11 @@
 {
-    "name": "flutter_download_manager",
+    "name": "抖音 / 小红书下载器",
     "short_name": "flutter_download_manager",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",
     "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "description": "抖音 / 小红书媒体下载器 - Flutter Download Manager",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [
