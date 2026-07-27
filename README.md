@@ -81,6 +81,7 @@ lib/
         └── platform_shell.dart            # 平台容器 (顶/底部 Tab 导航)
 
 android/  ios/  linux/  macos/  web/         # 各平台原生工程
+build_android.sh  build_linux.sh  build_macos.sh  build_web.sh   # 编译脚本
 ```
 
 ## UI 设计规范
@@ -89,44 +90,47 @@ android/  ios/  linux/  macos/  web/         # 各平台原生工程
 
 ## 编译运行
 
-### 准备
+### ⚠️ 重要：必须用 build 脚本
 
-```bash
-flutter pub get
-```
+> 直接用 `flutter build apk --release` / `flutter build web --release` 在某些环境会失败（如 CI runner 缺少 web 平台、jni 与 AGP 9+ 不兼容）。
+> **请使用项目根目录的 4 个 build 脚本**，它们会：
+> - 自动修复 ~/.pub-cache 中 jni 1.0.1 的 AGP 9+ 兼容问题
+> - 自动检测并重新生成 web/ 目录（fresh checkout 缺失时）
+> - 检查平台依赖（Linux 需要 cmake）
+> - 检查 OSTYPE（macOS 脚本只在 macOS 上运行）
 
 ### 各平台编译
 
 ```bash
-# Android APK（移动端）
-flutter build apk --release
-# → build/app/outputs/flutter-apk/app-release.apk (≈51MB)
-
-# iOS（macOS 上）
-flutter build ios --release --no-codesign
-
-# Linux 桌面
-flutter build linux --release
-# → build/linux/x64/release/bundle/flutter_download_manager (≈25MB)
-
-# macOS 桌面
-flutter build macos --release
-# → build/macos/Build/Products/Release/flutter_download_manager.app
-
-# Web
-flutter build web --release
-# → build/web/
+# 推荐：使用 build 脚本（自动处理环境问题）
+bash build_android.sh    # Android APK
+bash build_linux.sh      # Linux 桌面
+bash build_macos.sh      # macOS 桌面（仅在 macOS 环境）
+bash build_web.sh        # Web
 
 # 调试运行
 flutter run
+
+# 静态分析
+flutter analyze         # 0 issues
+
+# 直接 flutter build（不推荐，需要手动处理环境问题）
+flutter build apk --release
+flutter build ios --release --no-codesign
+flutter build linux --release
+flutter build macos --release
+flutter build web --release
 ```
 
-### 静态检查与测试
+### 输出位置
 
-```bash
-flutter analyze                # 静态分析 (0 issues)
-flutter test                   # 单元测试
-```
+| 平台 | 路径 |
+|---|---|
+| Android APK | `build/app/outputs/flutter-apk/app-release.apk` (~51MB) |
+| iOS | `build/ios/iphoneos/Runner.app` |
+| Linux | `build/linux/x64/release/bundle/flutter_download_manager` (~25MB) |
+| macOS | `build/macos/Build/Products/Release/flutter_download_manager.app` |
+| Web | `build/web/index.html` + 静态资源 (~41MB) |
 
 ## 平台特定说明
 
