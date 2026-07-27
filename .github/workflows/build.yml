@@ -95,7 +95,7 @@ jobs:
       - name: Prepare Linux artifact
         run: |
           mkdir -p dist
-          # 在项目根直接执行 tar，避免 cd 进出
+          # 使用 -C 在仓库根直接 tar，避免 cd 切换
           tar -czf dist/${APP_NAME}-linux.tar.gz -C build/linux/x64/release/bundle .
           ls -lh dist/
       - name: Upload Linux bundle
@@ -122,9 +122,9 @@ jobs:
       - name: Prepare macOS artifact
         run: |
           mkdir -p dist
-          # 在项目根直接 zip，避免 cd 进出
-          cd build/macos/Build/Products/Release && \
-            zip -r ../../../../dist/${APP_NAME}-mac.zip ${APP_NAME}.app
+          # 在仓库根直接 zip 完整 .app 目录
+          # 不 cd 进入子目录，避免路径计算错乱
+          zip -r dist/${APP_NAME}-mac.zip build/macos/Build/Products/Release/${APP_NAME}.app
           ls -lh dist/
       - name: Upload macOS app
         uses: actions/upload-artifact@v4
@@ -150,7 +150,7 @@ jobs:
       - name: Prepare Web artifact
         run: |
           mkdir -p dist
-          # 在项目根直接 zip
+          # 在仓库根直接 zip 整个 build/web
           zip -r dist/${APP_NAME}-web.zip build/web -x "build/web/*.map"
           ls -lh dist/
       - name: Upload Web bundle
