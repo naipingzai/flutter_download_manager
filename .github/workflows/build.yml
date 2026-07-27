@@ -1,8 +1,9 @@
-name: Build Android, iOS, Linux, macOS & Web
+name: Build All Platforms
 
 on:
   push:
     branches: [main, master]
+    tags: ['v*']
   pull_request:
     branches: [main, master]
   workflow_dispatch:
@@ -27,11 +28,15 @@ jobs:
         run: flutter analyze --no-fatal-infos
       - name: Build APK
         run: flutter build apk --release
+      - name: Prepare APK artifact
+        run: |
+          mkdir -p dist
+          cp build/app/outputs/flutter-apk/app-release.apk dist/flutter_download_manager-android.apk
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: android-apk
-          path: build/app/outputs/flutter-apk/app-release.apk
+          path: dist/flutter_download_manager-android.apk
 
   build-ios:
     name: Build iOS IPA (unsigned)
@@ -44,7 +49,7 @@ jobs:
           channel: 'stable'
       - name: Install Flutter dependencies
         run: flutter pub get
-      - name: Disable code signing in Xcode project
+      - name: Disable code signing
         run: |
           sed -i '' 's/CODE_SIGN_STYLE = Automatic;/CODE_SIGN_STYLE = Manual;/g' ios/Runner.xcodeproj/project.pbxproj
           sed -i '' 's/"CODE_SIGN_IDENTITY\[sdk=iphoneos\*\]" = "iPhone Developer";/"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "";/g' ios/Runner.xcodeproj/project.pbxproj
@@ -55,11 +60,15 @@ jobs:
           mkdir -p Payload
           cp -r build/ios/iphoneos/Runner.app Payload/
           zip -r flutter_download_manager.ipa Payload
+      - name: Prepare iOS artifact
+        run: |
+          mkdir -p dist
+          cp flutter_download_manager.ipa dist/flutter_download_manager-ios.ipa
       - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
           name: ios-ipa
-          path: flutter_download_manager.ipa
+          path: dist/flutter_download_manager-ios.ipa
 
   build-linux:
     name: Build Linux
@@ -80,15 +89,17 @@ jobs:
         run: flutter analyze --no-fatal-infos
       - name: Build Linux
         run: flutter build linux --release
-      - name: Package Linux bundle
+      - name: Prepare Linux artifact
         run: |
+          mkdir -p dist
           cd build/linux/x64/release/bundle
-          tar -czf ../../../../../flutter_download_manager-linux.tar.gz .
+          tar -czf ../../../flutter_download_manager-linux.tar.gz .
+          cp flutter_download_manager-linux.tar.gz ../../../dist/
       - name: Upload Linux bundle
         uses: actions/upload-artifact@v4
         with:
           name: linux-bundle
-          path: flutter_download_manager-linux.tar.gz
+          path: dist/flutter_download_manager-linux.tar.gz
 
   build-macos:
     name: Build macOS
@@ -105,15 +116,17 @@ jobs:
         run: flutter analyze --no-fatal-infos
       - name: Build macOS
         run: flutter build macos --release
-      - name: Package macOS app
+      - name: Prepare macOS artifact
         run: |
+          mkdir -p dist
           cd build/macos/Build/Products/Release
           zip -r ../../../../flutter_download_manager-mac.zip flutter_download_manager.app
+          cp flutter_download_manager-mac.zip ../../../../dist/
       - name: Upload macOS app
         uses: actions/upload-artifact@v4
         with:
           name: macos-app
-          path: flutter_download_manager-mac.zip
+          path: dist/flutter_download_manager-mac.zip
 
   build-web:
     name: Build Web
@@ -130,8 +143,98 @@ jobs:
         run: flutter analyze --no-fatal-infos
       - name: Build Web
         run: flutter build web --release
+      - name: Prepare Web artifact
+        run: |
+          mkdir -p dist
+          cd build/web
+          zip -r ../../dist/flutter_download_manager-web.zip . -x "*.map"
+          cd ../..
       - name: Upload Web bundle
         uses: actions/upload-artifact@v4
         with:
           name: web-bundle
-          path: build/web/
+          path: dist/flutter_download_manager-web.zip
+
+  # 仅在 push tag (v*) 时发布到 GitHub Release
+  release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    needs: [build-android, build-ios, build-linux, build-macos, build-web]
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Show downloaded artifacts
+        run: |
+          echo "Downloaded artifacts:"
+          ls -la artifacts/
+          echo ""
+          for d in artifacts/*/; do
+            echo "Contents of $d:"
+            ls -la "$d"
+          done
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ github.ref_name }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: |
+            artifacts/*/flutter_download_manager-android.apk
+            artifacts/*/flutter_download_manager-ios.ipa
+            artifacts/*/flutter_download_manager-linux.tar.gz
+            artifacts/*/flutter_download_manager-mac.zip
+            artifacts/*/flutter_download_manager-web.zip
+          body: |
+            ## 下载地址
+
+            选择适合您平台的版本下载：
+
+            | 平台 | 文件 |
+            |---|---|
+            | **Android** | `flutter_download_manager-android.apk` |
+            | **iOS** | `flutter_download_manager-ios.ipa` (未签名) |
+            | **Linux** | `flutter_download_manager-linux.tar.gz` (含可执行文件 + lib) |
+            | **macOS** | `flutter_download_manager-mac.zip` (含 .app) |
+            | **Web** | `flutter_download_manager-web.zip` (静态资源) |
+
+            ## 安装说明
+
+            ### Android
+            ```bash
+            adb install flutter_download_manager-android.apk
+            ```
+
+            ### iOS (需开发者签名)
+            ```bash
+            # 在 Xcode 中打开 Runner.xcworkspace
+            # 配置 Team，Archive，导出 IPA
+            codesign --force --sign "Apple Development: YOUR_TEAM" flutter_download_manager-ios.ipa
+            ```
+
+            ### Linux
+            ```bash
+            tar -xzf flutter_download_manager-linux.tar.gz
+            cd flutter_download_manager
+            ./flutter_download_manager
+            ```
+
+            ### macOS
+            ```bash
+            unzip flutter_download_manager-mac.zip
+            open flutter_download_manager.app
+            ```
+
+            ### Web
+            ```bash
+            unzip flutter_download_manager-web.zip
+            # 用 HTTP 服务器部署 build/web/
+            python3 -m http.server -d build/web 8080
