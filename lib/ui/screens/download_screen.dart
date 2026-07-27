@@ -2,10 +2,10 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
-import '../../platform/douyin/douyin_bridge.dart';
-import '../../platform/xhs/xhs_bridge.dart';
-import '../../service/cookie_store.dart';
-import '../../service/gallery_service.dart';
+import '../../services/download/douyin_bridge.dart';
+import '../../services/download/xhs_bridge.dart';
+import '../../services/storage/cookie_store.dart';
+import '../../services/platform/gallery_service.dart';
 
 /// 下载页面 — 粘贴链接 + 下载
 class DownloadScreen extends StatefulWidget {

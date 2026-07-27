@@ -1,7 +1,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
-import '../../service/cookie_store.dart';
+import '../../services/storage/cookie_store.dart';
 
 /// 设置页面 - 完全复刻原项目 ProfileScreen
 /// Cookie 管理 + 关于信息

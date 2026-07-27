@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
-import '../../service/cookie_store.dart';
-import '../../platform/douyin/douyin_bridge.dart';
-import '../../platform/xhs/xhs_bridge.dart';
+
+import '../../design_system/design_system.dart';
+import '../../services/storage/cookie_store.dart';
+import '../../services/download/douyin_bridge.dart';
+import '../../services/download/xhs_bridge.dart';
 
 /// Cookie 管理页面
 class CookieManageScreen extends StatefulWidget {
@@ -33,6 +35,7 @@ class _CookieManageScreenState extends State<CookieManageScreen> {
 
   Future<void> _loadCookies() async {
     await _store.load();
+    if (!mounted) return;
     setState(() {
       _cookies = _store.getAll();
       _activeName = _store.getActiveName();
@@ -47,12 +50,16 @@ class _CookieManageScreenState extends State<CookieManageScreen> {
     }
   }
 
-  /// 登录获取 Cookie — 桌面端跳转浏览器，移动端用 InAppWebView
-  void _showLoginGetDialog() {
+  Future<void> _openBrowser(String url) async {
+    await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+  }
+
+  void _showLoginDialog() {
     final loginUrl = widget.platform == 'xhs'
         ? 'https://www.xiaohongshu.com/'
         : 'https://www.douyin.com/';
 
+    if (!mounted) return;
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -80,10 +87,9 @@ class _CookieManageScreenState extends State<CookieManageScreen> {
             child: const Text('取消'),
           ),
           FilledButton(
-            onPressed: () async {
+            onPressed: () {
               Navigator.pop(ctx);
-              await launchUrl(Uri.parse(loginUrl),
-                  mode: LaunchMode.externalApplication);
+              _openBrowser(loginUrl);
             },
             child: const Text('打开浏览器'),
           ),
@@ -92,101 +98,92 @@ class _CookieManageScreenState extends State<CookieManageScreen> {
     );
   }
 
-  void _showManualInputDialog() {
+  Future<void> _showManualInputDialog() async {
     final controller = TextEditingController();
-    showDialog(
-      context: context,
-      builder: (context) {
-        final size = MediaQuery.of(context).size;
-        final dialogWidth = size.width * 0.85;
-        final dialogHeight = size.height * 0.5;
-        return AlertDialog(
-          title: const Text('输入 Cookie'),
-          content: SizedBox(
-            width: dialogWidth.clamp(280, 600),
-            height: dialogHeight.clamp(200, 400),
-            child: TextField(
-              controller: controller,
-              expands: true,
-              maxLines: null,
-              minLines: null,
-              textAlignVertical: TextAlignVertical.top,
-              decoration: const InputDecoration(
-                hintText: '粘贴 Cookie 内容...',
-                border: OutlineInputBorder(),
-                contentPadding: EdgeInsets.all(12),
-              ),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('取消'),
-            ),
-            FilledButton(
-              onPressed: () async {
-                final cookie = controller.text.trim();
-                if (cookie.isEmpty) {
-                  if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Cookie 不能为空')),
-                    );
-                  }
-                  return;
-                }
-                final name = 'Cookie ${_cookies.length + 1}';
-                await _store.add(name, cookie);
-                await _store.setActiveName(name);
-                _applyToBridge(cookie);
-                await _loadCookies();
-                if (context.mounted) Navigator.pop(context);
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('已保存')),
-                  );
-                }
-              },
-              child: const Text('保存'),
-            ),
-          ],
-        );
-      },
-    );
-  }
+    final size = MediaQuery.of(context).size;
+    final dialogWidth = size.width * 0.85;
+    final dialogHeight = size.height * 0.5;
 
-  void _showDeleteDialog(int index, CookieEntry entry) {
-    showDialog(
+    final cookie = await showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('删除 Cookie'),
-        content: Text('确定删除「${entry.name}」？'),
+        title: const Text('输入 Cookie'),
+        content: SizedBox(
+          width: dialogWidth.clamp(280, 600),
+          height: dialogHeight.clamp(200, 400),
+          child: AppTextField(
+            controller: controller,
+            hintText: '粘贴 Cookie 内容...',
+            expands: true,
+            contentPadding: const EdgeInsets.all(12),
+          ),
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
             child: const Text('取消'),
           ),
-          TextButton(
-            onPressed: () async {
-              await _store.removeAt(index);
-              if (_store.getActiveCookie() == null) _applyToBridge('');
-              await _loadCookies();
-              if (context.mounted) Navigator.pop(context);
-            },
-            style: TextButton.styleFrom(
-              foregroundColor: Theme.of(context).colorScheme.error,
-            ),
-            child: const Text('删除'),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, controller.text.trim()),
+            child: const Text('保存'),
           ),
         ],
       ),
     );
+
+    if (cookie == null || cookie.isEmpty) {
+      if (cookie != null && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Cookie 不能为空')),
+        );
+      }
+      return;
+    }
+
+    final name = 'Cookie ${_cookies.length + 1}';
+    await _store.add(name, cookie);
+    await _store.setActiveName(name);
+    _applyToBridge(cookie);
+    await _loadCookies();
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('已保存')),
+      );
+    }
+  }
+
+  Future<void> _selectCookie(CookieEntry entry) async {
+    await _store.setActiveName(entry.name);
+    _applyToBridge(entry.cookie);
+    await _loadCookies();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('已切换: ${entry.name}')),
+    );
+  }
+
+  Future<void> _deleteCookie(int index, CookieEntry entry) async {
+    final confirmed = await AppDialog.confirm(
+      context,
+      title: '删除 Cookie',
+      message: '确定删除「${entry.name}」？',
+      confirmLabel: '删除',
+      cancelLabel: '取消',
+      destructive: true,
+    );
+    if (!confirmed || !mounted) return;
+
+    await _store.removeAt(index);
+    if (_store.getActiveCookie() == null) _applyToBridge('');
+    await _loadCookies();
   }
 
   @override
   Widget build(BuildContext context) {
-    final hasActive = _store.getActiveCookie() != null &&
-        _store.getActiveCookie()!.isNotEmpty;
-    final activeCookie = _store.getActiveCookie() ?? '';
+    final scheme = Theme.of(context).colorScheme;
+    final activeCookie = _store.getActiveCookie();
+    final hasActive = activeCookie != null && activeCookie.isNotEmpty;
+    final keyCount = hasActive ? _store.getKeyCount(activeCookie) : 0;
 
     return Padding(
       padding: const EdgeInsets.all(16),
@@ -196,55 +193,42 @@ class _CookieManageScreenState extends State<CookieManageScreen> {
           Row(
             children: [
               Expanded(
-                child: FilledButton(
-                  onPressed: _showLoginGetDialog,
-                  style: FilledButton.styleFrom(
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                  child: const Text('登录获取'),
+                child: AppButton(
+                  label: '登录获取',
+                  icon: Icons.login,
+                  variant: AppButtonVariant.primary,
+                  expand: true,
+                  onPressed: _showLoginDialog,
                 ),
               ),
               const SizedBox(width: 8),
               Expanded(
-                child: OutlinedButton(
+                child: AppButton(
+                  label: '手动输入',
+                  icon: Icons.edit,
+                  variant: AppButtonVariant.secondary,
+                  expand: true,
                   onPressed: _showManualInputDialog,
-                  style: OutlinedButton.styleFrom(
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                  child: const Text('手动输入'),
                 ),
               ),
             ],
           ),
           const SizedBox(height: 16),
-          if (hasActive)
-            Text(
-              '当前: $_activeName (${_store.getKeyCount(activeCookie)} 个字段)',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Theme.of(context).colorScheme.primary,
-                  ),
-            )
-          else
-            Text(
-              '未设置 Cookie，部分功能不可用',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Theme.of(context).colorScheme.error,
-                  ),
-            ),
+          Text(
+            hasActive
+                ? '当前: $_activeName ($keyCount 个字段)'
+                : '未设置 Cookie，部分功能不可用',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: hasActive ? scheme.primary : scheme.error,
+                ),
+          ),
           const SizedBox(height: 12),
           Expanded(
             child: _cookies.isEmpty
                 ? Center(
                     child: Text(
                       '暂无保存的 Cookie',
-                      style: TextStyle(
-                        color:
-                            Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
+                      style: TextStyle(color: scheme.onSurfaceVariant),
                     ),
                   )
                 : ListView.builder(
@@ -252,124 +236,113 @@ class _CookieManageScreenState extends State<CookieManageScreen> {
                     itemBuilder: (context, index) {
                       final entry = _cookies[index];
                       final isActive = entry.name == _activeName;
-                      final keyCount = entry.cookie
+                      final entryKeyCount = entry.cookie
                           .split(';')
                           .where((s) => s.contains('='))
                           .length;
-                      return Card(
-                        margin: const EdgeInsets.only(bottom: 8),
-                        color: isActive
-                            ? Theme.of(context)
-                                .colorScheme
-                                .primaryContainer
-                                .withValues(alpha: 0.5)
-                            : Theme.of(context)
-                                .colorScheme
-                                .surfaceContainerHighest,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: InkWell(
-                          onTap: () async {
-                            await _store.setActiveName(entry.name);
-                            _applyToBridge(entry.cookie);
-                            await _loadCookies();
-                            if (context.mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                    content: Text('已切换: ${entry.name}')),
-                              );
-                            }
-                          },
-                          borderRadius: BorderRadius.circular(12),
-                          child: Padding(
-                            padding: const EdgeInsets.all(16),
-                            child: Row(
-                              children: [
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Row(
-                                        children: [
-                                          Flexible(
-                                            child: Text(
-                                              entry.name,
-                                              style: Theme.of(context)
-                                                  .textTheme
-                                                  .bodyLarge,
-                                              maxLines: 1,
-                                              overflow:
-                                                  TextOverflow.ellipsis,
-                                            ),
-                                          ),
-                                          if (isActive) ...[
-                                            const SizedBox(width: 8),
-                                            Container(
-                                              padding:
-                                                  const EdgeInsets.symmetric(
-                                                horizontal: 6,
-                                                vertical: 2,
-                                              ),
-                                              decoration: BoxDecoration(
-                                                color: Theme.of(context)
-                                                    .colorScheme
-                                                    .primary,
-                                                borderRadius:
-                                                    BorderRadius.circular(
-                                                        4),
-                                              ),
-                                              child: Text(
-                                                '当前',
-                                                style: Theme.of(context)
-                                                    .textTheme
-                                                    .bodySmall
-                                                    ?.copyWith(
-                                                      color: Theme.of(
-                                                              context)
-                                                          .colorScheme
-                                                          .onPrimary,
-                                                      fontSize: 10,
-                                                    ),
-                                              ),
-                                            ),
-                                          ],
-                                        ],
-                                      ),
-                                      Text(
-                                        '$keyCount 个字段',
-                                        style: Theme.of(context)
-                                            .textTheme
-                                            .bodySmall
-                                            ?.copyWith(
-                                              color: Theme.of(context)
-                                                  .colorScheme
-                                                  .onSurfaceVariant,
-                                            ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                IconButton(
-                                  icon: Icon(
-                                    Icons.delete,
-                                    color: Theme.of(context)
-                                        .colorScheme
-                                        .error,
-                                  ),
-                                  onPressed: () =>
-                                      _showDeleteDialog(index, entry),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
+                      return _CookieCard(
+                        entry: entry,
+                        isActive: isActive,
+                        keyCount: entryKeyCount,
+                        onTap: () => _selectCookie(entry),
+                        onDelete: () => _deleteCookie(index, entry),
                       );
                     },
                   ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Cookie 卡片 — 复用样式
+class _CookieCard extends StatelessWidget {
+  final CookieEntry entry;
+  final bool isActive;
+  final int keyCount;
+  final VoidCallback onTap;
+  final VoidCallback onDelete;
+
+  const _CookieCard({
+    required this.entry,
+    required this.isActive,
+    required this.keyCount,
+    required this.onTap,
+    required this.onDelete,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Card(
+      margin: const EdgeInsets.only(bottom: 8),
+      color: isActive
+          ? scheme.primaryContainer.withValues(alpha: 0.5)
+          : scheme.surfaceContainerHighest,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            entry.name,
+                            style: Theme.of(context).textTheme.bodyLarge,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        if (isActive) ...[
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: scheme.primary,
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Text(
+                              '当前',
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .bodySmall
+                                  ?.copyWith(
+                                    color: scheme.onPrimary,
+                                    fontSize: 10,
+                                  ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                    Text(
+                      '$keyCount 个字段',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: scheme.onSurfaceVariant,
+                          ),
+                    ),
+                  ],
+                ),
+              ),
+              IconButton(
+                icon: Icon(Icons.delete, color: scheme.error),
+                onPressed: onDelete,
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

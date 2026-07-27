@@ -23,4 +23,20 @@ plugins {
     id("org.jetbrains.kotlin.android") version "2.3.20" apply false
 }
 
+// 解决 jni 1.0.1 与 AGP 9+ 兼容问题：
+// jni 包在 AGP 9+ 时不再自动 apply kotlin-android，但仍执行 kotlin{} 块
+// 我们必须在 settingsEvaluated 之前给所有 Android Library 子项目应用 kotlin-android
+gradle.settingsEvaluated {
+    gradle.beforeProject {
+        if (this != rootProject && this.name != "app" &&
+            this.plugins.hasPlugin("com.android.library")) {
+            try {
+                plugins.apply("org.jetbrains.kotlin.android")
+            } catch (_: Throwable) {
+                // 忽略
+            }
+        }
+    }
+}
+
 include(":app")

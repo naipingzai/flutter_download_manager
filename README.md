@@ -1,106 +1,152 @@
 # Flutter Download Manager
 
-多平台媒体下载器，支持抖音、小红书等平台的视频/图片下载。
+抖音 / 小红书媒体下载器，Flutter 纯 Dart 实现，零原生核心依赖。
+
+支持平台：Android、iOS、Linux、macOS、Web
+
+## 功能特性
+
+- 抖音视频 / 图集 / Live Photo 下载
+- 小红书图文 / 视频笔记下载
+- 多 Cookie 管理与切换
+- 下载进度实时显示
+- 任务暂停 / 继续 / 重试
+- 自动保存到系统相册（iOS PhotoKit / Android MediaStore）
 
 ## 技术架构
 
 ```
-┌─────────────────────────────────────────────────┐
-│                   Flutter UI                     │
-├─────────────────────────────────────────────────┤
-│         DouyinBridge      XhsBridge             │
-│              (Dart FFI → C++)                   │
-├─────────────────────────────────────────────────┤
-│         C++ python_bridge (src/)                │
-│         ┌─ 嵌入 Python 解释器                   │
-│         ├─ 调用 dy_bridge.py                    │
-│         └─ 调用 xhs_bridge.py                   │
-├─────────────────────────────────────────────────┤
-│  Python 脚本 (python/)                          │
-│  ┌─ dy_bridge: 抖音解析 + ABogus签名 + 下载     │
-│  └─ xhs_bridge: 小红书解析 + 下载               │
-└─────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────┐
+│           Application / Flutter UI          │
+├─────────────────────────────────────────────┤
+│       lib/ui/screens/  (业务页面层)          │
+├─────────────────────────────────────────────┤
+│       lib/design_system/  (Design System)   │
+│       - AppButton / AppDialog / AppNavigation│
+│       - PlatformAdapter (集中 Platform.isX)  │
+├─────────────────────────────────────────────┤
+│       lib/services/  (服务层)                │
+│       - download/  (Douyin/Xhs Bridge)       │
+│       - storage/   (Database / Cookie)       │
+│       - platform/   (GalleryService)          │
+├─────────────────────────────────────────────┤
+│       lib/core/  (核心数据)                  │
+│       - DownloadTask + DownloadTaskManager    │
+└─────────────────────────────────────────────┘
 ```
 
-## 依赖要求
-
-- Flutter SDK >= 3.0.0
-- CMake >= 3.10
-- C++17 编译器
-- Python 3.8+ (嵌入式，需 python3-dev)
-
-## 编译运行
-
-```bash
-# 安装 Flutter 依赖
-flutter pub get
-
-# 安装 Python 依赖
-pip3 install -r python/requirements.txt
-
-# 编译 C++ python_bridge 库
-mkdir -p src/build && cd src/build
-cmake .. -DCMAKE_BUILD_TYPE=Release
-make -j$(nproc)
-cd ../..
-
-# 运行
-flutter run
-```
+零外部核心依赖：不需要 C++ / FFI / Python 嵌入，仅用 Dart 标准库。
 
 ## 项目结构
 
 ```
-├── lib/
-│   ├── main.dart                          # 入口
-│   ├── model/
-│   │   └── download_task.dart             # 任务数据模型
-│   ├── service/
-│   │   ├── python_service.dart            # FFI 桥接服务 (调用C++库)
-│   │   ├── download_task_manager.dart     # 任务管理器
-│   │   ├── database_service.dart          # SQLite 数据库
-│   │   └── cookie_store.dart              # Cookie 持久化
-│   ├── framework/
-│   │   ├── platform_plugin.dart           # 平台插件抽象
-│   │   └── plugin_registry.dart           # 插件注册表
+lib/
+├── main.dart                              # 应用入口
+├── app.dart                               # MaterialApp + 根路由
+│
+├── core/                                  # 核心模型
+│   └── task_manager/
+│       ├── download_task.dart
+│       └── download_task_manager.dart       # ChangeNotifier
+│
+├── design_system/                         # Design System
+│   ├── design_system.dart                 # 统一导出
+│   ├── platform/platform_adapter.dart      # 唯一 Platform.isX 调用点
+│   ├── theme/app_theme.dart               # Material 3 主题
+│   ├── buttons/app_button.dart            # 语义化按钮 (4 variant × 3 size)
+│   ├── inputs/app_text_field.dart         # 统一输入框
+│   ├── navigation/app_navigation.dart     # 响应式导航 (<600dp Bar / ≥600dp Rail)
+│   └── surfaces/app_dialog.dart           # 统一对话框
+│
+├── services/                              # 服务层
+│   ├── download/
+│   │   ├── native_download_service.dart   # HTTP + ABogus + INITIAL_STATE 解析
+│   │   ├── bridge_base.dart               # 去重 / 节流 / 任务生命周期
+│   │   ├── douyin_bridge.dart
+│   │   └── xhs_bridge.dart
 │   ├── platform/
-│   │   ├── douyin/
-│   │   │   ├── douyin_bridge.dart         # 抖音桥接 (调用Python)
-│   │   │   └── douyin_plugin.dart         # 抖音平台插件
-│   │   └── xhs/
-│   │       ├── xhs_bridge.dart            # 小红书桥接 (调用Python)
-│   │       └── xhs_plugin.dart            # 小红书平台插件
-│   └── ui/
-│       ├── screens/                       # 页面
-│       └── theme/                         # 主题
-├── src/                                   # C++ 源码
-│   ├── CMakeLists.txt
-│   ├── python_bridge.h                    # C FFI 接口
-│   └── python_bridge.cpp                  # 嵌入 Python 解释器
-├── python/                                # Python 脚本
-│   ├── dy_bridge.py                       # 抖音下载核心
-│   ├── xhs_bridge.py                      # 小红书下载核心
-│   ├── runner.py                          # CLI 调试入口
-│   └── requirements.txt
-└── pubspec.yaml
+│   │   └── gallery_service.dart           # 系统相册 (gal)
+│   └── storage/
+│       ├── storage_service.dart           # 应用目录封装
+│       ├── database_service.dart          # JSON 文件持久化
+│       └── cookie_store.dart              # 多 Cookie 切换
+│
+└── ui/                                    # 业务页面层
+    └── screens/
+        ├── home_screen.dart               # 首页 — 平台选择
+        ├── download_screen.dart           # 下载页
+        ├── tasks_screen.dart              # 任务页
+        ├── settings_screen.dart           # 设置页
+        ├── cookie_manage_screen.dart      # Cookie 管理
+        └── platform_shell.dart            # 平台容器 (顶/底部 Tab 导航)
+
+android/  ios/  linux/  macos/  web/         # 各平台原生工程
 ```
 
-## 功能特性
+## UI 设计规范
 
-- [x] 任务模型定义
-- [x] SQLite 数据库持久化
-- [x] Cookie 管理
-- [x] C++ 嵌入 Python 解释器 (FFI)
-- [x] 抖音视频/图集下载
-- [x] 小红书笔记下载
-- [x] 抖音直播录制
-- [x] 抖音评论采集
-- [x] ABogus 签名算法
-- [x] msToken / ttwid 自动获取
-- [ ] 断点续传
-- [ ] 下载速度优化
-- [ ] 批量下载账号/合集/收藏夹
+详见 [DESIGN.md](./DESIGN.md) — 参考百度网盘、迅雷、IDM 等主流下载工具规范。
+
+## 编译运行
+
+### 准备
+
+```bash
+flutter pub get
+```
+
+### 各平台编译
+
+```bash
+# Android APK（移动端）
+flutter build apk --release
+# → build/app/outputs/flutter-apk/app-release.apk (≈51MB)
+
+# iOS（macOS 上）
+flutter build ios --release --no-codesign
+
+# Linux 桌面
+flutter build linux --release
+# → build/linux/x64/release/bundle/flutter_download_manager (≈25MB)
+
+# macOS 桌面
+flutter build macos --release
+# → build/macos/Build/Products/Release/flutter_download_manager.app
+
+# Web
+flutter build web --release
+# → build/web/
+
+# 调试运行
+flutter run
+```
+
+### 静态检查与测试
+
+```bash
+flutter analyze                # 静态分析 (0 issues)
+flutter test                   # 单元测试
+```
+
+## 平台特定说明
+
+### 移动端 (Android / iOS)
+
+- 全功能运行
+- `gal` 插件将媒体保存到系统相册
+- `path_provider` 提供应用沙箱目录
+
+### 桌面端 (Linux / macOS)
+
+- 通过 `AppButton` / `AppDialog` 自动适配 Material / Cupertino 视觉风格
+- `gal` 在桌面端自动跳过相册操作（仅保存到下载目录）
+
+### Web
+
+- 服务层 `dart:io` 调用通过 `PlatformAdapter` 自动降级
+- Cookie / 数据库通过 SharedPreferences 持久化（浏览器 LocalStorage）
+- 浏览器限制：跨域下载可能需要后端代理
 
 ## License
 
-MIT
+GPL-3.0

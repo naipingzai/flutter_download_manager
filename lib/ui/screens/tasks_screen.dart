@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../../model/download_task.dart';
-import '../../service/download_task_manager.dart';
+import '../../core/task_manager/download_task.dart';
+import '../../core/task_manager/download_task_manager.dart';
 
 /// 任务页面
 class TasksScreen extends StatelessWidget {

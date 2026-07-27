@@ -1,4 +1,4 @@
-name: Build All Platforms
+name: Build Android, iOS, Linux, macOS & Web
 
 on:
   push:
@@ -69,7 +69,7 @@ jobs:
       - name: Install Linux build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgtk-3-dev
+          sudo apt-get install -y libgtk-3-dev ninja-build clang cmake pkg-config
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.44.x'
@@ -80,15 +80,19 @@ jobs:
         run: flutter analyze --no-fatal-infos
       - name: Build Linux
         run: flutter build linux --release
+      - name: Package Linux bundle
+        run: |
+          cd build/linux/x64/release/bundle
+          tar -czf ../../../../../flutter_download_manager-linux.tar.gz .
       - name: Upload Linux bundle
         uses: actions/upload-artifact@v4
         with:
           name: linux-bundle
-          path: build/linux/x64/release/bundle/
+          path: flutter_download_manager-linux.tar.gz
 
-  build-windows:
-    name: Build Windows
-    runs-on: windows-latest
+  build-macos:
+    name: Build macOS
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
       - uses: subosito/flutter-action@v2
@@ -99,10 +103,35 @@ jobs:
         run: flutter pub get
       - name: Analyze
         run: flutter analyze --no-fatal-infos
-      - name: Build Windows
-        run: flutter build windows --release
-      - name: Upload Windows bundle
+      - name: Build macOS
+        run: flutter build macos --release
+      - name: Package macOS app
+        run: |
+          cd build/macos/Build/Products/Release
+          zip -r ../../../../flutter_download_manager-mac.zip flutter_download_manager.app
+      - name: Upload macOS app
         uses: actions/upload-artifact@v4
         with:
-          name: windows-bundle
-          path: build/windows/x64/runner/Release/
+          name: macos-app
+          path: flutter_download_manager-mac.zip
+
+  build-web:
+    name: Build Web
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.44.x'
+          channel: 'stable'
+      - name: Install Flutter dependencies
+        run: flutter pub get
+      - name: Analyze
+        run: flutter analyze --no-fatal-infos
+      - name: Build Web
+        run: flutter build web --release
+      - name: Upload Web bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-bundle
+          path: build/web/

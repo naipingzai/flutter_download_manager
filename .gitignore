@@ -66,14 +66,15 @@ app.*.map.json
 **/ios/**/*.perspectivev3
 **/xcuserdata
 
-# Linux
-**/linux/flutter/ephemeral/
-**/linux/flutter/generated_plugins.cmake
-
 # Runtime data (应用运行时生成的数据)
 download_manager_data/
 
-# macOS, Windows, Web (not targeting these)
-/macos/
+# Web (not targeting)
 /web/
 devtools_options.yaml
+
+# Build reports
+android/build/reports/
+android/build/test-results/
+android/build/intermediates/
+android/build/outputs/
