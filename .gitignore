@@ -47,6 +47,10 @@ app.*.map.json
 /android/gradlew.bat
 /android/local.properties
 **/android/**/GeneratedPluginRegistrant.java
+android/build/reports/
+android/build/test-results/
+android/build/intermediates/
+android/build/outputs/
 
 # iOS
 **/ios/Pods/
@@ -66,15 +70,7 @@ app.*.map.json
 **/ios/**/*.perspectivev3
 **/xcuserdata
 
-# Runtime data (应用运行时生成的数据)
+# Runtime data
 download_manager_data/
 
-# Web (not targeting)
-# /web/  # web 平台目录被跟踪，flutter build web 需要
 devtools_options.yaml
-
-# Build reports
-android/build/reports/
-android/build/test-results/
-android/build/intermediates/
-android/build/outputs/

@@ -2,7 +2,7 @@
 
 抖音 / 小红书媒体下载器，Flutter 纯 Dart 实现，零原生核心依赖。
 
-支持平台：Android、iOS、Linux、macOS、Web
+支持平台：Android、iOS、Linux、macOS、Windows
 
 ## 功能特性
 
@@ -80,57 +80,47 @@ lib/
         ├── cookie_manage_screen.dart      # Cookie 管理
         └── platform_shell.dart            # 平台容器 (顶/底部 Tab 导航)
 
-android/  ios/  linux/  macos/  web/         # 各平台原生工程
-build_android.sh  build_linux.sh  build_macos.sh  build_web.sh   # 编译脚本
+android/  ios/  linux/  macos/  windows/    # 各平台原生工程
 ```
 
 ## UI 设计规范
 
-详见 [DESIGN.md](./DESIGN.md) — 参考百度网盘、迅雷、IDM 等主流下载工具规范。
+详见 [DESIGN.md](./DESIGN.md)
 
 ## 编译运行
 
-### ⚠️ 重要：必须用 build 脚本
+### 准备
 
-> 直接用 `flutter build apk --release` / `flutter build web --release` 在某些环境会失败（如 CI runner 缺少 web 平台、jni 与 AGP 9+ 不兼容）。
-> **请使用项目根目录的 4 个 build 脚本**，它们会：
-> - 自动修复 ~/.pub-cache 中 jni 1.0.1 的 AGP 9+ 兼容问题
-> - 自动检测并重新生成 web/ 目录（fresh checkout 缺失时）
-> - 检查平台依赖（Linux 需要 cmake）
-> - 检查 OSTYPE（macOS 脚本只在 macOS 上运行）
+```bash
+flutter pub get
+```
 
 ### 各平台编译
 
 ```bash
-# 推荐：使用 build 脚本（自动处理环境问题）
-bash build_android.sh    # Android APK
-bash build_linux.sh      # Linux 桌面
-bash build_macos.sh      # macOS 桌面（仅在 macOS 环境）
-bash build_web.sh        # Web
-
-# 调试运行
-flutter run
-
-# 静态分析
-flutter analyze         # 0 issues
-
-# 直接 flutter build（不推荐，需要手动处理环境问题）
+# Android APK
 flutter build apk --release
+# → build/app/outputs/flutter-apk/app-release.apk
+
+# iOS
 flutter build ios --release --no-codesign
+
+# Linux
 flutter build linux --release
+# → build/linux/x64/release/bundle/flutter_download_manager
+
+# macOS
 flutter build macos --release
-flutter build web --release
+
+# Windows
+flutter build windows --release
 ```
 
-### 输出位置
+### 静态检查
 
-| 平台 | 路径 |
-|---|---|
-| Android APK | `build/app/outputs/flutter-apk/app-release.apk` (~51MB) |
-| iOS | `build/ios/iphoneos/Runner.app` |
-| Linux | `build/linux/x64/release/bundle/flutter_download_manager` (~25MB) |
-| macOS | `build/macos/Build/Products/Release/flutter_download_manager.app` |
-| Web | `build/web/index.html` + 静态资源 (~41MB) |
+```bash
+flutter analyze
+```
 
 ## 平台特定说明
 
@@ -140,16 +130,10 @@ flutter build web --release
 - `gal` 插件将媒体保存到系统相册
 - `path_provider` 提供应用沙箱目录
 
-### 桌面端 (Linux / macOS)
+### 桌面端 (Linux / macOS / Windows)
 
-- 通过 `AppButton` / `AppDialog` 自动适配 Material / Cupertino 视觉风格
-- `gal` 在桌面端自动跳过相册操作（仅保存到下载目录）
-
-### Web
-
-- 服务层 `dart:io` 调用通过 `PlatformAdapter` 自动降级
-- Cookie / 数据库通过 SharedPreferences 持久化（浏览器 LocalStorage）
-- 浏览器限制：跨域下载可能需要后端代理
+- `AppButton` / `AppDialog` 自动适配视觉风格
+- `gal` 在桌面端自动跳过相册操作
 
 ## License
 

@@ -1,15 +1,11 @@
-name: Build All Platforms
+name: Build Android, iOS, Linux, macOS & Windows
 
 on:
   push:
     branches: [main, master]
-    tags: ['v*']
   pull_request:
     branches: [main, master]
   workflow_dispatch:
-
-env:
-  APP_NAME: flutter_download_manager
 
 jobs:
   build-android:
@@ -31,16 +27,11 @@ jobs:
         run: flutter analyze --no-fatal-infos
       - name: Build APK
         run: flutter build apk --release
-      - name: Prepare APK artifact
-        run: |
-          mkdir -p dist
-          cp build/app/outputs/flutter-apk/app-release.apk dist/${APP_NAME}-android.apk
-          ls -lh dist/
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: android-apk
-          path: dist/${APP_NAME}-android.apk
+          path: build/app/outputs/flutter-apk/app-release.apk
 
   build-ios:
     name: Build iOS IPA (unsigned)
@@ -53,25 +44,22 @@ jobs:
           channel: 'stable'
       - name: Install Flutter dependencies
         run: flutter pub get
-      - name: Disable code signing
+      - name: Disable code signing in Xcode project
         run: |
           sed -i '' 's/CODE_SIGN_STYLE = Automatic;/CODE_SIGN_STYLE = Manual;/g' ios/Runner.xcodeproj/project.pbxproj
           sed -i '' 's/"CODE_SIGN_IDENTITY\[sdk=iphoneos\*\]" = "iPhone Developer";/"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "";/g' ios/Runner.xcodeproj/project.pbxproj
       - name: Build iOS (no codesign)
         run: flutter build ios --release --no-codesign
-      - name: Prepare iOS artifact
+      - name: Create IPA
         run: |
           mkdir -p Payload
           cp -r build/ios/iphoneos/Runner.app Payload/
-          zip -r ${APP_NAME}.ipa Payload
-          mkdir -p dist
-          cp ${APP_NAME}.ipa dist/${APP_NAME}-ios.ipa
-          ls -lh dist/
+          zip -r flutter_download_manager.ipa Payload
       - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
           name: ios-ipa
-          path: dist/${APP_NAME}-ios.ipa
+          path: flutter_download_manager.ipa
 
   build-linux:
     name: Build Linux
@@ -81,7 +69,7 @@ jobs:
       - name: Install Linux build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgtk-3-dev ninja-build clang cmake pkg-config
+          sudo apt-get install -y libgtk-3-dev
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.44.x'
@@ -92,17 +80,32 @@ jobs:
         run: flutter analyze --no-fatal-infos
       - name: Build Linux
         run: flutter build linux --release
-      - name: Prepare Linux artifact
-        run: |
-          mkdir -p dist
-          # 使用 -C 在仓库根直接 tar，避免 cd 切换
-          tar -czf dist/${APP_NAME}-linux.tar.gz -C build/linux/x64/release/bundle .
-          ls -lh dist/
       - name: Upload Linux bundle
         uses: actions/upload-artifact@v4
         with:
           name: linux-bundle
-          path: dist/${APP_NAME}-linux.tar.gz
+          path: build/linux/x64/release/bundle/
+
+  build-windows:
+    name: Build Windows
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.44.x'
+          channel: 'stable'
+      - name: Install Flutter dependencies
+        run: flutter pub get
+      - name: Analyze
+        run: flutter analyze --no-fatal-infos
+      - name: Build Windows
+        run: flutter build windows --release
+      - name: Upload Windows bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-bundle
+          path: build/windows/x64/runner/Release/
 
   build-macos:
     name: Build macOS
@@ -119,181 +122,12 @@ jobs:
         run: flutter analyze --no-fatal-infos
       - name: Build macOS
         run: flutter build macos --release
-      - name: Prepare macOS artifact
+      - name: Package macOS app
         run: |
-          mkdir -p dist
-          # 在仓库根直接 zip 完整 .app 目录
-          # 不 cd 进入子目录，避免路径计算错乱
-          zip -r dist/${APP_NAME}-mac.zip build/macos/Build/Products/Release/${APP_NAME}.app
-          ls -lh dist/
+          cd build/macos/Build/Products/Release
+          zip -r ../../../../flutter_download_manager-mac.zip flutter_download_manager.app
       - name: Upload macOS app
         uses: actions/upload-artifact@v4
         with:
           name: macos-app
-          path: dist/${APP_NAME}-mac.zip
-
-  build-web:
-    name: Build Web
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: subosito/flutter-action@v2
-        with:
-          flutter-version: '3.44.x'
-          channel: 'stable'
-      - name: Install Flutter dependencies
-        run: flutter pub get
-      - name: Analyze
-        run: flutter analyze --no-fatal-infos
-      - name: Build Web
-        run: flutter build web --release
-      - name: Prepare Web artifact
-        run: |
-          mkdir -p dist
-          # 在仓库根直接 zip 整个 build/web
-          zip -r dist/${APP_NAME}-web.zip build/web -x "build/web/*.map"
-          ls -lh dist/
-      - name: Upload Web bundle
-        uses: actions/upload-artifact@v4
-        with:
-          name: web-bundle
-          path: dist/${APP_NAME}-web.zip
-
-  # 仅在 push tag (v*) 时发布到 GitHub Release
-  release:
-    name: Create GitHub Release
-    runs-on: ubuntu-latest
-    needs: [build-android, build-ios, build-linux, build-macos, build-web]
-    if: startsWith(github.ref, 'refs/tags/v')
-    permissions:
-      contents: write
-    steps:
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: artifacts
-        continue-on-error: true
-
-      - name: Show downloaded artifacts
-        run: |
-          echo "Downloaded artifacts:"
-          ls -la artifacts/ 2>/dev/null || echo "no artifacts dir"
-          if [ -d artifacts ]; then
-            for d in artifacts/*/; do
-              echo "Contents of $d:"
-              ls -la "$d" 2>/dev/null
-            done
-          fi
-
-      - name: Collect available artifacts
-        id: collect
-        run: |
-          AVAILABLE_FILES=()
-          for f in \
-            artifacts/*/flutter_download_manager-android.apk \
-            artifacts/*/flutter_download_manager-ios.ipa \
-            artifacts/*/flutter_download_manager-linux.tar.gz \
-            artifacts/*/flutter_download_manager-mac.zip \
-            artifacts/*/flutter_download_manager-web.zip; do
-            if [ -f "$f" ]; then
-              AVAILABLE_FILES+=("$f")
-              echo "✅ found: $f"
-            fi
-          done
-          {
-            echo "files<<EOF"
-            printf '            %s\n' "${AVAILABLE_FILES[@]}"
-            echo "EOF"
-          } >> $GITHUB_OUTPUT
-          echo "Available: ${#AVAILABLE_FILES[@]} files"
-
-      - name: Create source archive
-        run: |
-          # 总是包含源码 zip
-          zip -r ${APP_NAME}-source.zip . \
-            -x "build/*" "build" ".git/*" ".git" \
-                  "*.iml" ".idea/*" ".idea" \
-                  ".dart_tool/*" ".dart_tool" \
-                  "pubspec.lock" "linux/flutter/ephemeral/*" 2>/dev/null || true
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          name: ${{ github.ref_name }}
-          draft: false
-          prerelease: false
-          generate_release_notes: true
-          fail_on_unmatched_files: false
-          files: |
-            ${{ steps.collect.outputs.files }}
-            ${{ env.APP_NAME }}-source.zip
-          body: |
-            ## 下载 / Download
-
-            从下方下载适合您平台的版本 / Download the version for your platform:
-
-            | 平台 / Platform | 文件 / File | 大小 / Size |
-            |---|---|---|
-            | **Android** | `${APP_NAME}-android.apk` | ~51 MB |
-            | **iOS** | `${APP_NAME}-ios.ipa` (未签名 / unsigned) | ~30 MB |
-            | **Linux** | `${APP_NAME}-linux.tar.gz` (含可执行文件 + lib) | ~25 MB |
-            | **macOS** | `${APP_NAME}-mac.zip` (含 .app) | ~50 MB |
-            | **Web** | `${APP_NAME}-web.zip` (静态资源) | ~40 MB |
-            | **Source** | `${APP_NAME}-source.zip` (源码 / source) | ~1 MB |
-
-            ## 安装 / Installation
-
-            ### Android
-            ```bash
-            adb install ${APP_NAME}-android.apk
-            # 或 Or: 直接将 APK 传到手机打开 / transfer to phone and open
-            ```
-
-            ### iOS（需开发者签名 / Developer signing required）
-            ```bash
-            # 在 Xcode 中打开 ios/Runner.xcworkspace
-            # Open ios/Runner.xcworkspace in Xcode
-            # 配置 Team → Archive → 导出 IPA / Configure Team → Archive → Export IPA
-            codesign --force --sign "Apple Development: YOUR_TEAM" ${APP_NAME}-ios.ipa
-            ```
-
-            ### Linux
-            ```bash
-            tar -xzf ${APP_NAME}-linux.tar.gz
-            cd ${APP_NAME}
-            ./${APP_NAME}
-            ```
-
-            ### macOS
-            ```bash
-            unzip ${APP_NAME}-mac.zip
-            open ${APP_NAME}.app
-            ```
-
-            ### Web
-            ```bash
-            unzip ${APP_NAME}-web.zip -d web-build
-            # 部署 web-build/ 目录到任何静态 HTTP 服务器
-            # Deploy web-build/ to any static HTTP server
-            python3 -m http.server -d web-build 8080
-            ```
-
-            ## 系统要求 / System Requirements
-
-            - **Android**: 5.0+ (API 21+)
-            - **iOS**: 11.0+
-            - **Linux**: glibc 2.31+ (Ubuntu 20.04+, Debian 11+, etc.)
-            - **macOS**: 10.15+ (Catalina)
-            - **Web**: Modern browsers (Chrome 90+, Firefox 88+, Safari 14+)
-
-            ## 源码 / Source Code
-
-            完整源码 / Full source code: https://github.com/${{ github.repository }}
-
-            ## 反馈 / Feedback
-
-            发现问题请到 / Report issues at: https://github.com/${{ github.repository }}/issues
-
-            ---
-
-            本 Release 由 GitHub Actions 自动构建 / This Release was automatically built by GitHub Actions
+          path: flutter_download_manager-mac.zip
