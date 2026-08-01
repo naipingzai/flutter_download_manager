@@ -1,3 +1,14 @@
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
+        maven("https://chaquo.com/maven")
+    }
+    dependencies {
+        classpath("com.chaquo.python:gradle:15.0.1")
+    }
+}
+
 allprojects {
     repositories {
         google()
