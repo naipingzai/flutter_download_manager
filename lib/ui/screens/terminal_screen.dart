@@ -1,13 +1,13 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:path_provider/path_provider.dart';
 import 'dart:io';
-import '../../services/python/python_runner.dart';
-import '../../services/storage/cookie_store.dart';
+import '../../services/python/embedded_python_manager.dart';
 
-/// 终端模拟器 — 作为 Python 脚本的输入输出壳
-/// 用户输入命令 → 调用 Python → 显示输出
+/// 终端模拟器 — 直接启动 Python 子进程，转发 stdin/stdout
+/// Python 脚本自己负责打印菜单、等待输入、执行操作
+/// Flutter 只做 I/O 转发，不干预任何交互逻辑
 class TerminalScreen extends StatefulWidget {
   final String platformId;
   final String platformName;
@@ -28,468 +28,154 @@ class _TerminalScreenState extends State<TerminalScreen> {
   final List<_TerminalLine> _lines = [];
   final List<String> _history = [];
   bool _isRunning = false;
-  String _savePath = '';
+  Process? _process;
+  StreamSubscription? _stdoutSub;
+  StreamSubscription? _stderrSub;
 
   @override
   void initState() {
     super.initState();
-    _initTerminal();
+    _startPythonProcess();
   }
 
   @override
   void dispose() {
+    _killProcess();
     _inputController.dispose();
     _scrollController.dispose();
     super.dispose();
   }
 
-  Future<void> _initTerminal() async {
-    // 初始化保存路径
+  /// 启动 Python 子进程，运行交互式主脚本
+  Future<void> _startPythonProcess() async {
+    final manager = EmbeddedPythonManager.instance;
+    await manager.initialize();
+
+    if (!manager.isAvailable) {
+      _addOutput('❌ Python 环境不可用', _LineType.error);
+      _addOutput('请先运行: bash scripts/download_python.sh', _LineType.error);
+      return;
+    }
+
+    // 查找主入口脚本
+    final scriptsDir = manager.scriptsDir;
+    final mainScript = _findMainScript(scriptsDir);
+    if (mainScript == null) {
+      _addOutput('❌ 未找到主入口脚本', _LineType.error);
+      _addOutput('脚本目录: $scriptsDir', _LineType.info);
+      return;
+    }
+
+    _addOutput('🐍 启动 Python 子进程...', _LineType.info);
+
     try {
-      final appDir = await getApplicationDocumentsDirectory();
-      final dirName = switch (widget.platformId) {
-        'xhs' => 'XhsDownload',
-        'kuaishou' => 'KsDownload',
-        _ => 'DyDownload',
+      // 设置环境变量告诉 Python 脚本当前平台
+      final env = <String, String>{
+        'PLATFORM_ID': widget.platformId,
+        'PLATFORM_NAME': widget.platformName,
       };
-      _savePath = '${appDir.path}/$dirName';
-      await Directory(_savePath).create(recursive: true);
-    } catch (e) {
-      _savePath = '/tmp/Download';
-    }
 
-    // 同步 Cookie
-    await _syncCookie();
-
-    // 显示欢迎信息
-    _addOutput('╔══════════════════════════════════════════════════╗', _LineType.system);
-    _addOutput('║  高级下载器 — ${widget.platformName}终端', _LineType.system);
-    _addOutput('║  内嵌 Python 环境', _LineType.system);
-    _addOutput('╚══════════════════════════════════════════════════╝', _LineType.system);
-    _addOutput('', _LineType.system);
-    _addOutput('📁 下载目录: $_savePath', _LineType.info);
-    _addOutput('', _LineType.system);
-    _showHelp();
-  }
-
-  void _showHelp() {
-    _addOutput('─── 可用命令 ───', _LineType.system);
-
-    // 通用命令
-    _addOutput('  help / ?        显示帮助', _LineType.help);
-    _addOutput('  clear / cls     清屏', _LineType.help);
-    _addOutput('  cookie <内容>   设置 Cookie', _LineType.help);
-    _addOutput('  status          查看 Python 环境状态', _LineType.help);
-
-    // 直接粘贴链接下载
-    _addOutput('', _LineType.system);
-    _addOutput('─── 直接粘贴链接即可下载 ───', _LineType.system);
-    _addOutput('  粘贴链接后回车自动下载', _LineType.help);
-
-    if (widget.platformId == 'douyin') {
-      _addOutput('', _LineType.system);
-      _addOutput('─── 抖音专属命令 ───', _LineType.system);
-      _addOutput('  detect <链接>       检测链接(作者/合集信息)', _LineType.help);
-      _addOutput('  author <sec_uid>    下载作者全部作品', _LineType.help);
-      _addOutput('  collect             浏览收藏夹', _LineType.help);
-      _addOutput('  collect <id> <名称> 下载指定收藏夹', _LineType.help);
-      _addOutput('  mix <id> <名称>     下载合集', _LineType.help);
-      _addOutput('  live <链接>         录制直播', _LineType.help);
-      _addOutput('  retry               从历史记录重新下载', _LineType.help);
-    }
-
-    _addOutput('', _LineType.system);
-  }
-
-  Future<void> _syncCookie() async {
-    try {
-      final store = CookieStore(platform: widget.platformId);
-      await store.load();
-      final cookie = store.getActiveCookie();
-      if (cookie != null && cookie.isNotEmpty) {
-        _addOutput('🍪 Cookie 已加载 (${store.getActiveName()})', _LineType.info);
-      } else {
-        _addOutput('⚠️ 未设置 Cookie，部分功能可能不可用', _LineType.warning);
-        _addOutput('   使用 cookie <内容> 命令设置', _LineType.warning);
+      if (manager.pythonHome != null) {
+        env['PYTHONHOME'] = manager.pythonHome!;
       }
+
+      // 启动 Python 子进程
+      _process = await Process.start(
+        manager.executablePath!,
+        [mainScript],
+        environment: env,
+        workingDirectory: scriptsDir,
+        mode: ProcessStartMode.normal,
+      );
+
+      _isRunning = true;
+
+      // 监听 stdout
+      _stdoutSub = _process!.stdout
+          .transform(utf8.decoder)
+          .transform(const LineSplitter())
+          .listen((line) {
+        _addOutput(line, _LineType.output);
+      });
+
+      // 监听 stderr
+      _stderrSub = _process!.stderr
+          .transform(utf8.decoder)
+          .transform(const LineSplitter())
+          .listen((line) {
+        _addOutput(line, _LineType.error);
+      });
+
+      // 监听进程退出
+      _process!.exitCode.then((code) {
+        _isRunning = false;
+        _addOutput('\n🐍 Python 进程已退出 (exit code: $code)', _LineType.info);
+        if (mounted) setState(() {});
+      });
+
+      if (mounted) setState(() {});
     } catch (e) {
-      _addOutput('⚠️ Cookie 加载失败: $e', _LineType.error);
+      _addOutput('❌ 启动失败: $e', _LineType.error);
     }
+  }
+
+  /// 查找主入口脚本
+  String? _findMainScript(String? scriptsDir) {
+    // 按优先级查找
+    final candidates = [
+      if (scriptsDir != null) '$scriptsDir/main_cli.py',
+      if (scriptsDir != null) '${Directory(scriptsDir).parent.path}/main_cli.py',
+    ];
+
+    for (final path in candidates) {
+      if (File(path).existsSync()) return path;
+    }
+
+    // 查找 assets/python/main_cli.py
+    final assetScript = '${Directory.current.path}/assets/python/main_cli.py';
+    if (File(assetScript).existsSync()) return assetScript;
+
+    return null;
+  }
+
+  /// 发送用户输入到 Python 进程的 stdin
+  void _sendInput(String input) {
+    if (_process == null || !_isRunning) {
+      _addOutput('❌ Python 进程未运行', _LineType.error);
+      return;
+    }
+
+    _process!.stdin.writeln(input);
+    _process!.stdin.flush();
   }
 
   void _addOutput(String text, _LineType type) {
+    if (!mounted) return;
     setState(() {
       _lines.add(_TerminalLine(text: text, type: type));
     });
     // 自动滚动到底部
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_scrollController.hasClients) {
-        _scrollController.animateTo(
-          _scrollController.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 100),
-          curve: Curves.easeOut,
-        );
+        _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
       }
     });
   }
 
-  /// 执行用户输入
-  Future<void> _executeCommand(String input) async {
-    final trimmed = input.trim();
-    if (trimmed.isEmpty) return;
-
-    // 添加到历史
-    _history.insert(0, trimmed);
-
-    // 显示用户输入
-    _addOutput('❯ $trimmed', _LineType.userInput);
-
-    if (_isRunning) {
-      _addOutput('⚠️ 有命令正在执行，请等待完成', _LineType.warning);
-      return;
-    }
-
-    _setRunning(true);
-
-    try {
-      await _processCommand(trimmed);
-    } catch (e) {
-      _addOutput('❌ 错误: $e', _LineType.error);
-    } finally {
-      _setRunning(false);
-    }
+  void _killProcess() {
+    _stdoutSub?.cancel();
+    _stderrSub?.cancel();
+    _process?.kill(ProcessSignal.sigterm);
+    _process = null;
+    _isRunning = false;
   }
 
-  Future<void> _processCommand(String input) async {
-    final parts = input.split(RegExp(r'\s+'));
-    final cmd = parts[0].toLowerCase();
-
-    switch (cmd) {
-      case 'help':
-      case '?':
-        _showHelp();
-        break;
-
-      case 'clear':
-      case 'cls':
-        setState(() => _lines.clear());
-        break;
-
-      case 'cookie':
-        await _handleCookie(input.substring(cmd.length).trim());
-        break;
-
-      case 'status':
-        await _handleStatus();
-        break;
-
-      case 'detect':
-        if (parts.length < 2) {
-          _addOutput('用法: detect <链接>', _LineType.error);
-        } else {
-          await _handleDetect(parts[1]);
-        }
-        break;
-
-      case 'author':
-        if (parts.length < 2) {
-          _addOutput('用法: author <sec_uid>', _LineType.error);
-        } else {
-          await _handleBatchAuthor(parts[1]);
-        }
-        break;
-
-      case 'collect':
-        if (parts.length < 2) {
-          await _handleListCollects();
-        } else {
-          final collectId = parts[1];
-          final collectName = parts.length > 2 ? parts.sublist(2).join(' ') : '收藏夹_$collectId';
-          await _handleBatchCollect(collectId, collectName);
-        }
-        break;
-
-      case 'mix':
-        if (parts.length < 2) {
-          _addOutput('用法: mix <mix_id> [名称]', _LineType.error);
-        } else {
-          final mixId = parts[1];
-          final mixName = parts.length > 2 ? parts.sublist(2).join(' ') : '合集_$mixId';
-          await _handleBatchMix(mixId, mixName);
-        }
-        break;
-
-      case 'live':
-        if (parts.length < 2) {
-          _addOutput('用法: live <直播间链接>', _LineType.error);
-        } else {
-          await _handleLive(input.substring(cmd.length).trim());
-        }
-        break;
-
-      case 'retry':
-        await _handleRetry();
-        break;
-
-      default:
-        // 不是命令，当作链接处理
-        if (input.contains('http://') || input.contains('https://')) {
-          await _handleDownload(input);
-        } else {
-          _addOutput('❓ 未知命令: $cmd', _LineType.error);
-          _addOutput('   输入 help 查看可用命令', _LineType.help);
-        }
-    }
+  /// 重启 Python 进程
+  Future<void> _restartProcess() async {
+    _killProcess();
+    setState(() => _lines.clear());
+    await _startPythonProcess();
   }
-
-  void _setRunning(bool value) {
-    setState(() => _isRunning = value);
-  }
-
-  // ═══ 命令处理 ═══
-
-  Future<void> _handleDownload(String link) async {
-    _addOutput('🔍 解析链接中...', _LineType.info);
-
-    try {
-      final result = await _callPython(
-        module: _getModuleName(),
-        function: 'parse_link',
-        args: [link, _savePath, ''],
-      );
-      _printResult(result);
-    } catch (e) {
-      _addOutput('❌ 下载失败: $e', _LineType.error);
-    }
-  }
-
-  Future<void> _handleCookie(String cookie) async {
-    if (cookie.isEmpty) {
-      _addOutput('用法: cookie <Cookie内容>', _LineType.error);
-      return;
-    }
-    try {
-      final result = await _callPython(
-        module: _getModuleName(),
-        function: 'set_cookie',
-        args: [cookie],
-      );
-      _addOutput('✅ Cookie 已设置', _LineType.success);
-      if (result is Map && result['key_count'] != null) {
-        _addOutput('   字段数: ${result['key_count']}', _LineType.info);
-      }
-    } catch (e) {
-      _addOutput('❌ 设置失败: $e', _LineType.error);
-    }
-  }
-
-  Future<void> _handleStatus() async {
-    try {
-      final status = await PythonRunner.instance.getStatus();
-      _addOutput('─── Python 环境状态 ───', _LineType.system);
-      _addOutput('  可用: ${status['available']}', _LineType.info);
-      _addOutput('  版本: ${status['version']}', _LineType.info);
-      _addOutput('  内嵌: ${status['embedded']}', _LineType.info);
-      _addOutput('  平台: ${status['platform']}', _LineType.info);
-      if (status['executable'] != null) {
-        _addOutput('  路径: ${status['executable']}', _LineType.info);
-      }
-    } catch (e) {
-      _addOutput('❌ 获取状态失败: $e', _LineType.error);
-    }
-  }
-
-  Future<void> _handleDetect(String link) async {
-    _addOutput('🔍 检测链接信息...', _LineType.info);
-    try {
-      final result = await _callPython(
-        module: 'dy_bridge',
-        function: 'detect_link_info',
-        args: [link],
-      );
-      if (result is Map) {
-        final r = Map<String, dynamic>.from(result);
-        if (r['success'] == true) {
-          final author = r['author'] as Map<String, dynamic>?;
-          final mix = r['mix'] as Map<String, dynamic>?;
-          _addOutput('📝 标题: ${r['title'] ?? ''}', _LineType.info);
-          if (author != null) {
-            _addOutput('👤 作者: ${author['nickname']} (UID: ${author['uid']})', _LineType.info);
-            _addOutput('   sec_uid: ${author['sec_uid']}', _LineType.info);
-            _addOutput('   抖音号: ${author['unique_id']}', _LineType.info);
-            _addOutput('', _LineType.system);
-            _addOutput('   下载作者全部作品: author ${author['sec_uid']}', _LineType.help);
-          }
-          if (mix != null) {
-            _addOutput('📁 合集: ${mix['mix_name']} (${mix['count']}个作品)', _LineType.info);
-            _addOutput('   mix_id: ${mix['mix_id']}', _LineType.info);
-            _addOutput('', _LineType.system);
-            _addOutput('   下载合集: mix ${mix['mix_id']} ${mix['mix_name']}', _LineType.help);
-          }
-        } else {
-          _addOutput('❌ ${r['message'] ?? '检测失败'}', _LineType.error);
-        }
-      }
-    } catch (e) {
-      _addOutput('❌ 检测失败: $e', _LineType.error);
-    }
-  }
-
-  Future<void> _handleBatchAuthor(String secUid) async {
-    _addOutput('⬇️ 开始下载作者全部作品...', _LineType.info);
-    try {
-      final result = await _callPython(
-        module: 'dy_bridge',
-        function: 'batch_download_account',
-        args: [secUid, '作者_$secUid', _savePath, ''],
-      );
-      _printResult(result);
-    } catch (e) {
-      _addOutput('❌ 下载失败: $e', _LineType.error);
-    }
-  }
-
-  Future<void> _handleListCollects() async {
-    _addOutput('📚 获取收藏夹列表...', _LineType.info);
-    try {
-      final result = await _callPython(
-        module: 'dy_bridge',
-        function: 'list_collect_folders',
-        args: [],
-      );
-      if (result is Map) {
-        final r = Map<String, dynamic>.from(result);
-        if (r['success'] == true) {
-          final folders = r['folders'] as List<dynamic>? ?? [];
-          if (folders.isEmpty) {
-            _addOutput('没有找到收藏夹', _LineType.warning);
-            return;
-          }
-          _addOutput('─── 收藏夹列表 ───', _LineType.system);
-          for (var i = 0; i < folders.length; i++) {
-            final f = folders[i] as Map<String, dynamic>;
-            _addOutput('  [${i + 1}] ${f['name']} (${f['count']}个作品)', _LineType.info);
-            _addOutput('      ID: ${f['id']}', _LineType.info);
-          }
-          _addOutput('', _LineType.system);
-          _addOutput('下载收藏夹: collect <ID> <名称>', _LineType.help);
-        } else {
-          _addOutput('❌ ${r['message']}', _LineType.error);
-        }
-      }
-    } catch (e) {
-      _addOutput('❌ 获取失败: $e', _LineType.error);
-    }
-  }
-
-  Future<void> _handleBatchCollect(String collectId, String collectName) async {
-    _addOutput('⬇️ 开始下载收藏夹: $collectName...', _LineType.info);
-    try {
-      final result = await _callPython(
-        module: 'dy_bridge',
-        function: 'batch_download_collect',
-        args: [collectId, collectName, _savePath, ''],
-      );
-      _printResult(result);
-    } catch (e) {
-      _addOutput('❌ 下载失败: $e', _LineType.error);
-    }
-  }
-
-  Future<void> _handleBatchMix(String mixId, String mixName) async {
-    _addOutput('⬇️ 开始下载合集: $mixName...', _LineType.info);
-    try {
-      final result = await _callPython(
-        module: 'dy_bridge',
-        function: 'batch_download_mix',
-        args: [mixId, mixName, _savePath, ''],
-      );
-      _printResult(result);
-    } catch (e) {
-      _addOutput('❌ 下载失败: $e', _LineType.error);
-    }
-  }
-
-  Future<void> _handleLive(String liveUrl) async {
-    _addOutput('🎥 开始录制直播...', _LineType.info);
-    try {
-      final result = await _callPython(
-        module: 'dy_bridge',
-        function: 'record_live',
-        args: [liveUrl, _savePath, ''],
-      );
-      _printResult(result);
-    } catch (e) {
-      _addOutput('❌ 录制失败: $e', _LineType.error);
-    }
-  }
-
-  Future<void> _handleRetry() async {
-    _addOutput('🔄 从历史记录重新下载...', _LineType.info);
-    try {
-      final result = await _callPython(
-        module: 'dy_bridge',
-        function: 'redownload_from_history',
-        args: [_savePath, ''],
-      );
-      _printResult(result);
-    } catch (e) {
-      _addOutput('❌ 重新下载失败: $e', _LineType.error);
-    }
-  }
-
-  // ═══ 工具方法 ═══
-
-  String _getModuleName() {
-    switch (widget.platformId) {
-      case 'xhs':
-        return 'xhs_bridge';
-      case 'kuaishou':
-        return 'ks_bridge';
-      default:
-        return 'dy_bridge';
-    }
-  }
-
-  Future<dynamic> _callPython({
-    required String module,
-    required String function,
-    required List<dynamic> args,
-  }) async {
-    return await PythonRunner.instance.callPython(
-      module: module,
-      function: function,
-      args: args,
-    );
-  }
-
-  void _printResult(dynamic result) {
-    if (result is Map) {
-      final r = Map<String, dynamic>.from(result);
-      if (r['success'] == true) {
-        _addOutput('✅ ${r['title'] ?? '完成'}', _LineType.success);
-        if (r['message'] != null && r['message'].toString().isNotEmpty) {
-          _addOutput('   ${r['message']}', _LineType.info);
-        }
-        if (r['author'] != null) {
-          _addOutput('   作者: ${r['author']}', _LineType.info);
-        }
-        if (r['path'] != null) {
-          _addOutput('   路径: ${r['path']}', _LineType.info);
-        }
-        if (r['size'] != null && r['size'] > 0) {
-          final mb = (r['size'] as int) / (1024 * 1024);
-          _addOutput('   大小: ${mb.toStringAsFixed(1)} MB', _LineType.info);
-        }
-      } else {
-        _addOutput('❌ ${r['message'] ?? '失败'}', _LineType.error);
-      }
-    } else {
-      _addOutput('$result', _LineType.output);
-    }
-  }
-
-  // ═══ UI ═══
 
   @override
   Widget build(BuildContext context) {
@@ -498,48 +184,59 @@ class _TerminalScreenState extends State<TerminalScreen> {
 
     return Column(
       children: [
+        // 工具栏
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          color: isDark ? const Color(0xFF2D2D2D) : const Color(0xFFF0F0F0),
+          child: Row(
+            children: [
+              Icon(
+                _isRunning ? Icons.circle : Icons.circle_outlined,
+                size: 10,
+                color: _isRunning ? Colors.green : Colors.grey,
+              ),
+              const SizedBox(width: 6),
+              Text(
+                _isRunning ? 'Python 运行中' : 'Python 未运行',
+                style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
+              ),
+              const Spacer(),
+              TextButton.icon(
+                onPressed: _restartProcess,
+                icon: const Icon(Icons.refresh, size: 14),
+                label: const Text('重启', style: TextStyle(fontSize: 11)),
+                style: TextButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                ),
+              ),
+            ],
+          ),
+        ),
+
         // 终端输出区域
         Expanded(
           child: Container(
             color: isDark ? const Color(0xFF1E1E1E) : const Color(0xFFFAFAFA),
             child: ListView.builder(
               controller: _scrollController,
-              padding: const EdgeInsets.all(12),
+              padding: const EdgeInsets.all(8),
               itemCount: _lines.length,
               itemBuilder: (context, index) {
                 final line = _lines[index];
-                return _buildTerminalLine(line, isDark);
+                return Text(
+                  line.text,
+                  style: TextStyle(
+                    fontFamily: 'monospace',
+                    fontSize: 13,
+                    height: 1.3,
+                    color: _getLineColor(line.type, isDark),
+                  ),
+                );
               },
             ),
           ),
         ),
-
-        // 运行状态指示器
-        if (_isRunning)
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-            color: scheme.primaryContainer,
-            child: Row(
-              children: [
-                SizedBox(
-                  width: 14,
-                  height: 14,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: scheme.primary,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  '执行中...',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: scheme.onPrimaryContainer,
-                  ),
-                ),
-              ],
-            ),
-          ),
 
         // 输入区域
         Container(
@@ -552,10 +249,10 @@ class _TerminalScreenState extends State<TerminalScreen> {
             ),
           ),
           padding: EdgeInsets.only(
-            left: 12,
-            right: 8,
-            top: 8,
-            bottom: MediaQuery.of(context).viewInsets.bottom + 8,
+            left: 8,
+            right: 4,
+            top: 6,
+            bottom: MediaQuery.of(context).viewInsets.bottom + 6,
           ),
           child: Row(
             children: [
@@ -563,7 +260,7 @@ class _TerminalScreenState extends State<TerminalScreen> {
                 '❯ ',
                 style: TextStyle(
                   fontFamily: 'monospace',
-                  fontSize: 15,
+                  fontSize: 14,
                   fontWeight: FontWeight.bold,
                   color: scheme.primary,
                 ),
@@ -573,13 +270,13 @@ class _TerminalScreenState extends State<TerminalScreen> {
                   controller: _inputController,
                   style: const TextStyle(
                     fontFamily: 'monospace',
-                    fontSize: 14,
+                    fontSize: 13,
                   ),
                   decoration: InputDecoration(
-                    hintText: '输入链接或命令...',
+                    hintText: '输入回车发送到 Python...',
                     hintStyle: TextStyle(
-                      color: scheme.onSurfaceVariant.withValues(alpha: 0.5),
-                      fontSize: 14,
+                      color: scheme.onSurfaceVariant.withValues(alpha: 0.4),
+                      fontSize: 13,
                     ),
                     border: InputBorder.none,
                     isDense: true,
@@ -587,24 +284,36 @@ class _TerminalScreenState extends State<TerminalScreen> {
                   ),
                   textInputAction: TextInputAction.send,
                   onSubmitted: (value) {
-                    _executeCommand(value);
-                    _inputController.clear();
+                    if (value.isNotEmpty) {
+                      // 添加到历史
+                      _history.insert(0, value);
+                      // 显示用户输入（带 echo）
+                      _addOutput('❯ $value', _LineType.userInput);
+                      // 发送到 Python
+                      _sendInput(value);
+                      _inputController.clear();
+                    }
                   },
-                  enabled: !_isRunning,
+                  enabled: _isRunning,
                 ),
               ),
               IconButton(
-                icon: const Icon(Icons.send, size: 20),
+                icon: const Icon(Icons.send, size: 18),
                 onPressed: _isRunning
-                    ? null
-                    : () {
-                        _executeCommand(_inputController.text);
-                        _inputController.clear();
-                      },
+                    ? () {
+                        final value = _inputController.text;
+                        if (value.isNotEmpty) {
+                          _history.insert(0, value);
+                          _addOutput('❯ $value', _LineType.userInput);
+                          _sendInput(value);
+                          _inputController.clear();
+                        }
+                      }
+                    : null,
                 visualDensity: VisualDensity.compact,
               ),
               IconButton(
-                icon: const Icon(Icons.content_paste, size: 18),
+                icon: const Icon(Icons.content_paste, size: 16),
                 onPressed: () async {
                   final data = await Clipboard.getData(Clipboard.kTextPlain);
                   if (data?.text != null) {
@@ -621,42 +330,25 @@ class _TerminalScreenState extends State<TerminalScreen> {
     );
   }
 
-  Widget _buildTerminalLine(_TerminalLine line, bool isDark) {
-    final color = switch (line.type) {
-      _LineType.userInput => isDark ? Colors.cyanAccent : Colors.blue,
-      _LineType.output => isDark ? Colors.white : Colors.black87,
-      _LineType.info => isDark ? Colors.grey[300] : Colors.grey[700],
-      _LineType.success => Colors.green,
-      _LineType.warning => Colors.orange,
-      _LineType.error => Colors.red,
-      _LineType.help => isDark ? Colors.grey[500] : Colors.grey[500],
-      _LineType.system => isDark ? Colors.blue[300] : Colors.blue[700],
-    };
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 1),
-      child: Text(
-        line.text,
-        style: TextStyle(
-          fontFamily: 'monospace',
-          fontSize: 13,
-          height: 1.4,
-          color: color,
-        ),
-      ),
-    );
+  Color _getLineColor(_LineType type, bool isDark) {
+    switch (type) {
+      case _LineType.output:
+        return isDark ? const Color(0xFFD4D4D4) : const Color(0xFF1E1E1E);
+      case _LineType.userInput:
+        return isDark ? Colors.cyanAccent : Colors.blue;
+      case _LineType.info:
+        return isDark ? Colors.grey[400]! : Colors.grey[700]!;
+      case _LineType.error:
+        return isDark ? const Color(0xFFf48771) : const Color(0xFFcd3131);
+    }
   }
 }
 
 enum _LineType {
-  userInput,
-  output,
-  info,
-  success,
-  warning,
-  error,
-  help,
-  system,
+  output,    // Python 标准输出
+  userInput, // 用户输入（echo）
+  info,      // Flutter 信息提示
+  error,     // 错误输出
 }
 
 class _TerminalLine {
