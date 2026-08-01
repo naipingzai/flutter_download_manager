@@ -2,6 +2,8 @@ allprojects {
     repositories {
         google()
         mavenCentral()
+        // Chaquopy Python 仓库
+        maven("https://chaquo.com/maven")
     }
 }
 

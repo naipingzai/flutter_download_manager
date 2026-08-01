@@ -1,8 +1,8 @@
 import 'bridge_base.dart';
 import '../python/python_runner.dart';
 
-/// 小红书下载桥接层（通过 Python 脚本执行）
-class XhsBridge {
+/// 快手下载桥接层（通过 Python 脚本执行）
+class KuaishouBridge {
   static final PythonRunner _python = PythonRunner.instance;
 
   static Future<Map<String, dynamic>> parseAndDownload(
@@ -10,13 +10,13 @@ class XhsBridge {
     return BridgeBase.executeTask(
       link: link,
       savePath: savePath,
-      source: 'xhs',
-      type: 'note',
+      source: 'kuaishou',
+      type: 'video',
       execute: (updateStatus, updateProgress) async {
-        updateStatus('🐍 调用 Python 解析小红书链接...');
+        updateStatus('🐍 调用 Python 解析快手链接...');
         try {
           final result = await _python.callPythonJson(
-            module: 'xhs_bridge',
+            module: 'ks_bridge',
             function: 'parse_link',
             args: [link, savePath, ''],
           );
@@ -32,10 +32,12 @@ class XhsBridge {
   }
 
   static Future<void> setCookie(String cookie) async {
-    await _python.setXhsCookie(cookie);
+    await _python.callPython(
+        module: 'ks_bridge', function: 'set_cookie', args: [cookie]);
   }
 
   static Future<void> setProxy(String proxy) async {
-    await _python.setXhsProxy(proxy);
+    await _python.callPython(
+        module: 'ks_bridge', function: 'set_proxy', args: [proxy]);
   }
 }

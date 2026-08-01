@@ -3,7 +3,7 @@ import 'package:provider/provider.dart';
 import '../../core/task_manager/download_task.dart';
 import '../../core/task_manager/download_task_manager.dart';
 
-/// 任务页面
+/// 任务页面 — 参考百度网盘/迅雷设计
 class TasksScreen extends StatelessWidget {
   final String platform;
 
@@ -14,100 +14,216 @@ class TasksScreen extends StatelessWidget {
     final taskManager = context.watch<DownloadTaskManager>();
     final tasks = platform.isEmpty
         ? taskManager.tasks
-        : taskManager.tasks.where((t) => t.source == platform).toList();
+        : taskManager.tasks.where((t) => t.platform.id == platform).toList();
 
     return Scaffold(
       body: tasks.isEmpty
-          ? Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.cloud_download_outlined,
-                      size: 64,
-                      color: Theme.of(context)
-                          .colorScheme
-                          .onSurfaceVariant
-                          .withValues(alpha: 0.4)),
-                  const SizedBox(height: 16),
-                  Text('暂无下载任务',
-                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                            color:
-                                Theme.of(context).colorScheme.onSurfaceVariant,
-                          )),
-                  const SizedBox(height: 8),
-                  Text('去下载页粘贴链接开始下载',
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color:
-                                Theme.of(context).colorScheme.onSurfaceVariant,
-                          )),
-                ],
-              ),
-            )
-          : Column(
-              children: [
-                Padding(
+          ? _buildEmptyState(context)
+          : _buildTaskList(context, tasks, taskManager),
+    );
+  }
+
+  Widget _buildEmptyState(BuildContext context) {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.cloud_download_outlined,
+              size: 64,
+              color: Theme.of(context)
+                  .colorScheme
+                  .onSurfaceVariant
+                  .withValues(alpha: 0.4)),
+          const SizedBox(height: 16),
+          Text('暂无下载任务',
+              style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  )),
+          const SizedBox(height: 8),
+          Text('去下载页粘贴链接开始下载',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  )),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTaskList(
+      BuildContext context, List<DownloadTask> tasks, DownloadTaskManager taskManager) {
+    final downloadingCount =
+        tasks.where((t) => t.status == TaskStatus.downloading).length;
+
+    return Column(
+      children: [
+        // 标题栏
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: Row(
+            children: [
+              Text('下载任务 (${tasks.length})',
+                  style: Theme.of(context).textTheme.titleSmall),
+              const Spacer(),
+              if (downloadingCount > 0)
+                Container(
                   padding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  child: Row(
-                    children: [
-                      Text('下载任务 (${tasks.length})',
-                          style: Theme.of(context).textTheme.titleSmall),
-                      const Spacer(),
-                      PopupMenuButton<String>(
-                        onSelected: (value) {
-                          if (value == 'completed') {
-                            taskManager.removeByStatus(TaskStatus.completed);
-                          } else if (value == 'failed') {
-                            taskManager.removeByStatus(TaskStatus.failed);
-                          } else if (value == 'all') {
-                            for (final t in tasks) {
-                              taskManager.removeTask(t.id);
-                            }
-                          }
-                        },
-                        itemBuilder: (context) => [
-                          const PopupMenuItem(
-                              value: 'completed', child: Text('清理已完成')),
-                          const PopupMenuItem(
-                              value: 'failed', child: Text('清理失败')),
-                          const PopupMenuDivider(),
-                          const PopupMenuItem(
-                              value: 'all',
-                              child: Text('清空全部',
-                                  style: TextStyle(color: Colors.red))),
-                        ],
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 8, vertical: 4),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text('清理',
-                                  style: Theme.of(context).textTheme.bodySmall),
-                              const Icon(Icons.arrow_drop_down, size: 18),
-                            ],
-                          ),
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context)
+                        .colorScheme
+                        .primaryContainer
+                        .withValues(alpha: 0.5),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    '下载中 $downloadingCount',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Theme.of(context).colorScheme.primary,
                         ),
-                      ),
+                  ),
+                ),
+              const SizedBox(width: 8),
+              PopupMenuButton<String>(
+                onSelected: (value) {
+                  if (value == 'completed') {
+                    taskManager.removeByStatus(TaskStatus.completed);
+                  } else if (value == 'failed') {
+                    taskManager.removeByStatus(TaskStatus.failed);
+                  } else if (value == 'all') {
+                    for (final t in tasks) {
+                      taskManager.removeTask(t.id);
+                    }
+                  }
+                },
+                itemBuilder: (context) => [
+                  const PopupMenuItem(
+                      value: 'completed', child: Text('清理已完成')),
+                  const PopupMenuItem(
+                      value: 'failed', child: Text('清理失败')),
+                  const PopupMenuDivider(),
+                  const PopupMenuItem(
+                      value: 'all',
+                      child: Text('清空全部',
+                          style: TextStyle(color: Colors.red))),
+                ],
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 8, vertical: 4),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text('清理',
+                          style: Theme.of(context).textTheme.bodySmall),
+                      const Icon(Icons.arrow_drop_down, size: 18),
                     ],
                   ),
                 ),
-                Expanded(
-                  child: ListView.builder(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    itemCount: tasks.length,
-                    itemBuilder: (context, index) {
-                      final task = tasks[index];
-                      return _TaskCard(task: task, taskManager: taskManager);
-                    },
-                  ),
-                ),
-              ],
+              ),
+            ],
+          ),
+        ),
+
+        // 任务列表
+        Expanded(
+          child: ListView.builder(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            itemCount: tasks.length,
+            itemBuilder: (context, index) {
+              final task = tasks[index];
+              return _TaskCard(task: task, taskManager: taskManager);
+            },
+          ),
+        ),
+
+        // 底部操作栏
+        if (tasks.isNotEmpty) _buildBottomBar(context, tasks, taskManager),
+      ],
+    );
+  }
+
+  Widget _buildBottomBar(
+      BuildContext context, List<DownloadTask> tasks, DownloadTaskManager taskManager) {
+    final hasDownloading =
+        tasks.any((t) => t.status == TaskStatus.downloading);
+    final hasPausedOrFailed = tasks.any(
+        (t) => t.status == TaskStatus.paused || t.status == TaskStatus.failed);
+    final hasCompleted =
+        tasks.any((t) => t.status == TaskStatus.completed);
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surface,
+        border: Border(
+          top: BorderSide(
+            color: Theme.of(context).colorScheme.outlineVariant.withValues(alpha: 0.3),
+          ),
+        ),
+      ),
+      child: SafeArea(
+        top: false,
+        child: Row(
+          children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: hasDownloading
+                    ? () {
+                        for (final t in tasks) {
+                          if (t.status == TaskStatus.downloading) {
+                            taskManager
+                                .updateTask(t.copyWith(status: TaskStatus.paused));
+                          }
+                        }
+                      }
+                    : null,
+                icon: const Icon(Icons.pause, size: 16),
+                label: const Text('全部暂停'),
+              ),
             ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: hasPausedOrFailed
+                    ? () {
+                        for (final t in tasks) {
+                          if (t.status == TaskStatus.paused ||
+                              t.status == TaskStatus.failed) {
+                            taskManager.updateTask(t.copyWith(
+                                status: TaskStatus.downloading,
+                                errorMessage: ''));
+                          }
+                        }
+                      }
+                    : null,
+                icon: const Icon(Icons.play_arrow, size: 16),
+                label: const Text('全部继续'),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: hasCompleted
+                    ? () {
+                        taskManager.removeByStatus(TaskStatus.completed);
+                      }
+                    : null,
+                icon: const Icon(Icons.delete_sweep, size: 16),
+                label: const Text('清理完成'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: hasCompleted
+                      ? Theme.of(context).colorScheme.error
+                      : null,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
 
+/// 任务卡片 — 参考百度网盘/迅雷设计
 class _TaskCard extends StatelessWidget {
   final DownloadTask task;
   final DownloadTaskManager taskManager;
@@ -146,6 +262,10 @@ class _TaskCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final isActive =
+        task.status == TaskStatus.downloading || task.status == TaskStatus.paused;
+
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -154,80 +274,218 @@ class _TaskCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         child: Padding(
           padding: const EdgeInsets.all(12),
-          child: Row(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Icon(_statusIcon(), size: 24, color: _statusColor(context)),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+              // 第一行: 图标 + 标题 + 操作按钮
+              Row(
+                children: [
+                  // 类型图标
+                  Container(
+                    width: 36,
+                    height: 36,
+                    decoration: BoxDecoration(
+                      color: _statusColor(context).withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Icon(_statusIcon(),
+                        size: 20, color: _statusColor(context)),
+                  ),
+                  const SizedBox(width: 10),
+                  // 标题 + 状态
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          task.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                fontWeight: FontWeight.w500,
+                              ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          task.statusText,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style:
+                              Theme.of(context).textTheme.bodySmall?.copyWith(
+                                    color: _statusColor(context),
+                                  ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  // 操作按钮
+                  _buildActionButtons(context),
+                ],
+              ),
+
+              // 进度条 (下载中/暂停时显示)
+              if (isActive) ...[
+                const SizedBox(height: 8),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(4),
+                  child: LinearProgressIndicator(
+                    value: task.progress > 0 ? task.progress : null,
+                    minHeight: 6,
+                    backgroundColor:
+                        scheme.surfaceContainerHighest,
+                    valueColor:
+                        AlwaysStoppedAnimation<Color>(_statusColor(context)),
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text(task.title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.bodyMedium),
-                    const SizedBox(height: 2),
                     Text(
-                      task.totalSize > 0 ? task.totalSizeStr : task.type,
+                      task.totalSize > 0
+                          ? '${task.downloadedSizeStr} / ${task.totalSizeStr}'
+                          : '下载中...',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color:
-                                Theme.of(context).colorScheme.onSurfaceVariant,
+                            color: scheme.onSurfaceVariant,
+                            fontSize: 11,
+                          ),
+                    ),
+                    Text(
+                      '${(task.progress * 100).toStringAsFixed(1)}%',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: _statusColor(context),
+                            fontWeight: FontWeight.w600,
+                            fontSize: 11,
                           ),
                     ),
                   ],
                 ),
-              ),
-              if (task.status == TaskStatus.downloading)
-                IconButton(
-                  icon: const Icon(Icons.stop, size: 20),
-                  onPressed: _togglePause,
-                  tooltip: '暂停',
-                )
-              else if (task.status == TaskStatus.paused) ...[
-                IconButton(
-                  icon: const Icon(Icons.play_arrow, size: 20),
-                  onPressed: _togglePause,
-                  tooltip: '继续',
+              ],
+
+              // 平台标识
+              if (task.status == TaskStatus.completed) ...[
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    Icon(Icons.folder_outlined,
+                        size: 12, color: scheme.onSurfaceVariant),
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: Text(
+                        task.filePath.isNotEmpty
+                            ? task.filePath.split('/').last
+                            : task.platform.displayName,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: scheme.onSurfaceVariant,
+                              fontSize: 11,
+                            ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    Text(
+                      task.totalSizeStr,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: scheme.onSurfaceVariant,
+                            fontSize: 11,
+                          ),
+                    ),
+                  ],
                 ),
-                IconButton(
-                  icon: const Icon(Icons.delete_outline, size: 18),
-                  onPressed: () => taskManager.removeTask(task.id),
-                  tooltip: '删除',
+              ],
+
+              // 错误信息
+              if (task.status == TaskStatus.failed &&
+                  task.errorMessage.isNotEmpty) ...[
+                const SizedBox(height: 4),
+                Text(
+                  task.errorMessage,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: scheme.error,
+                        fontSize: 11,
+                      ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
                 ),
-              ] else if (task.status == TaskStatus.failed) ...[
-                IconButton(
-                  icon: Icon(Icons.refresh,
-                      size: 20, color: Theme.of(context).colorScheme.primary),
-                  onPressed: _retry,
-                  tooltip: '重试',
-                ),
-                IconButton(
-                  icon: const Icon(Icons.delete_outline, size: 18),
-                  onPressed: () => taskManager.removeTask(task.id),
-                  tooltip: '删除',
-                ),
-              ] else if (task.status == TaskStatus.completed) ...[
-                IconButton(
-                  icon: const Icon(Icons.check_circle,
-                      size: 20, color: Colors.green),
-                  onPressed: null,
-                ),
-                IconButton(
-                  icon: const Icon(Icons.delete_outline, size: 18),
-                  onPressed: () => taskManager.removeTask(task.id),
-                  tooltip: '删除',
-                ),
-              ] else
-                IconButton(
-                  icon: const Icon(Icons.delete_outline, size: 18),
-                  onPressed: () => taskManager.removeTask(task.id),
-                  tooltip: '删除',
-                ),
+              ],
             ],
           ),
         ),
       ),
     );
+  }
+
+  Widget _buildActionButtons(BuildContext context) {
+    switch (task.status) {
+      case TaskStatus.downloading:
+        return IconButton(
+          icon: const Icon(Icons.pause, size: 20),
+          onPressed: _togglePause,
+          tooltip: '暂停',
+          visualDensity: VisualDensity.compact,
+        );
+      case TaskStatus.paused:
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            IconButton(
+              icon: const Icon(Icons.play_arrow, size: 20),
+              onPressed: _togglePause,
+              tooltip: '继续',
+              visualDensity: VisualDensity.compact,
+            ),
+            IconButton(
+              icon: const Icon(Icons.delete_outline, size: 18),
+              onPressed: () => taskManager.removeTask(task.id),
+              tooltip: '删除',
+              visualDensity: VisualDensity.compact,
+            ),
+          ],
+        );
+      case TaskStatus.failed:
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            IconButton(
+              icon: Icon(Icons.refresh,
+                  size: 20, color: Theme.of(context).colorScheme.primary),
+              onPressed: _retry,
+              tooltip: '重试',
+              visualDensity: VisualDensity.compact,
+            ),
+            IconButton(
+              icon: const Icon(Icons.delete_outline, size: 18),
+              onPressed: () => taskManager.removeTask(task.id),
+              tooltip: '删除',
+              visualDensity: VisualDensity.compact,
+            ),
+          ],
+        );
+      case TaskStatus.completed:
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            IconButton(
+              icon: const Icon(Icons.check_circle, size: 20, color: Colors.green),
+              onPressed: null,
+              visualDensity: VisualDensity.compact,
+            ),
+            IconButton(
+              icon: const Icon(Icons.delete_outline, size: 18),
+              onPressed: () => taskManager.removeTask(task.id),
+              tooltip: '删除',
+              visualDensity: VisualDensity.compact,
+            ),
+          ],
+        );
+      default:
+        return IconButton(
+          icon: const Icon(Icons.delete_outline, size: 18),
+          onPressed: () => taskManager.removeTask(task.id),
+          tooltip: '删除',
+          visualDensity: VisualDensity.compact,
+        );
+    }
   }
 
   void _togglePause() {
@@ -243,7 +501,6 @@ class _TaskCard extends StatelessWidget {
   void _retry() {
     taskManager.updateTask(task.copyWith(
       status: TaskStatus.downloading,
-      
       downloadedSize: 0,
       errorMessage: '',
     ));
@@ -277,9 +534,10 @@ class _DownloadLogDialog extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _infoRow('类型', task.type),
-            _infoRow('来源', task.source == 'xhs' ? '小红书' : '抖音'),
+            _infoRow('类型', task.contentType.displayName),
+            _infoRow('来源', task.platform.displayName),
             _infoRow('状态', task.status.displayName),
+            if (task.author.isNotEmpty) _infoRow('作者', task.author),
             if (task.totalSize > 0) _infoRow('大小', task.totalSizeStr),
             if (task.filePath.isNotEmpty)
               _infoRow('文件', task.filePath.split('/').last),
@@ -304,39 +562,6 @@ class _DownloadLogDialog extends StatelessWidget {
                 style: Theme.of(context).textTheme.bodySmall,
               ),
             ],
-            const SizedBox(height: 12),
-            Container(
-              height: 120,
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: ListView(
-                children: [
-                  if (task.status == TaskStatus.downloading)
-                    Text('▶ 正在下载: ${task.title}',
-                        style: const TextStyle(fontSize: 12)),
-                  if (task.totalSize > 0)
-                    Text('📦 文件大小: ${task.totalSizeStr}',
-                        style: const TextStyle(fontSize: 12)),
-                  if (task.filePath.isNotEmpty)
-                    Text('📁 保存到: ${task.filePath}',
-                        style: const TextStyle(fontSize: 12)),
-                  if (task.status == TaskStatus.completed)
-                    Text('✅ 下载完成',
-                        style: TextStyle(fontSize: 12, color: Colors.green)),
-                  if (task.status == TaskStatus.failed)
-                    Text('❌ 下载失败: ${task.errorMessage}',
-                        style: TextStyle(
-                            fontSize: 12,
-                            color: Theme.of(context).colorScheme.error)),
-                  if (task.status == TaskStatus.paused)
-                    Text('⏸ 已暂停',
-                        style: TextStyle(fontSize: 12, color: Colors.orange)),
-                ],
-              ),
-            ),
           ],
         ),
       ),
@@ -365,7 +590,6 @@ class _DownloadLogDialog extends StatelessWidget {
             onPressed: () {
               taskManager.updateTask(task.copyWith(
                 status: TaskStatus.downloading,
-                
                 downloadedSize: 0,
                 errorMessage: '',
               ));

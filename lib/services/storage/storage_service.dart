@@ -37,6 +37,7 @@ class StorageService {
     final root = await downloadsDirectory();
     final name = switch (platformId) {
       'xhs' => 'XhsDownload',
+      'kuaishou' => 'KsDownload',
       _ => 'DyDownload',
     };
     final dir = Directory('${root.path}/$name');
@@ -73,7 +74,7 @@ class StorageService {
   /// 清理所有下载文件（按平台目录）
   Future<int> cleanAllDownloads() async {
     int total = 0;
-    for (final id in ['douyin', 'xhs']) {
+    for (final id in ['douyin', 'xhs', 'kuaishou']) {
       final dir = await platformDownloadsDirectory(id);
       total += await cleanDirectory(dir);
     }

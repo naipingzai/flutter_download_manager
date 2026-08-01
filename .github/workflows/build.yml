@@ -8,6 +8,10 @@ on:
     branches: [main, master]
   workflow_dispatch:
 
+env:
+  PYTHON_VERSION: "3.12.3"
+  PYTHON_BUILD_DATE: "20240415"
+
 jobs:
   build-android:
     name: Build Android APK
@@ -81,11 +85,31 @@ jobs:
         run: flutter analyze --no-fatal-infos
       - name: Build Linux
         run: flutter build linux --release
+      - name: Download Python runtime (Linux x86_64)
+        run: |
+          mkdir -p python_runtime/linux
+          cd /tmp
+          curl -L --progress-bar -o python.tar.gz \
+            "https://github.com/indygreg/python-build-standalone/releases/download/${{ env.PYTHON_BUILD_DATE }}/cpython-${{ env.PYTHON_VERSION }}+${{ env.PYTHON_BUILD_DATE }}-x86_64-unknown-linux-gnu-install_only.tar.gz"
+          tar xzf python.tar.gz -C "$GITHUB_WORKSPACE/python_runtime/linux" --strip-components=1
+          rm python.tar.gz
+          chmod +x "$GITHUB_WORKSPACE/python_runtime/linux/bin/python3"
+      - name: Install Python dependencies
+        run: |
+          "$GITHUB_WORKSPACE/python_runtime/linux/bin/python3" -m pip install httpx pyyaml gmssl --quiet
+      - name: Bundle Python runtime into release
+        run: |
+          cp -r python_runtime build/linux/x64/release/bundle/
+          cp assets/python/*.py build/linux/x64/release/bundle/python_runtime/
+      - name: Package Linux bundle
+        run: |
+          cd build/linux/x64/release
+          tar czf ../../../flutter_download_manager-linux-x86_64.tar.gz bundle/
       - name: Upload Linux bundle
         uses: actions/upload-artifact@v4
         with:
           name: linux-bundle
-          path: build/linux/x64/release/bundle/
+          path: build/linux/x64/release/flutter_download_manager-linux-x86_64.tar.gz
 
   build-windows:
     name: Build Windows
@@ -102,11 +126,32 @@ jobs:
         run: flutter analyze --no-fatal-infos
       - name: Build Windows
         run: flutter build windows --release
+      - name: Download Python runtime (Windows x86_64)
+        run: |
+          mkdir -p python_runtime/windows
+          cd $env:TEMP
+          curl -L --progress-bar -o python.tar.gz "https://github.com/indygreg/python-build-standalone/releases/download/${{ env.PYTHON_BUILD_DATE }}/cpython-${{ env.PYTHON_VERSION }}+${{ env.PYTHON_BUILD_DATE }}-x86_64-pc-windows-msvc-shared-install_only.tar.gz"
+          tar xzf python.tar.gz -C "$env:GITHUB_WORKSPACE\python_runtime\windows" --strip-components=1
+          Remove-Item python.tar.gz
+        shell: pwsh
+      - name: Install Python dependencies
+        run: |
+          & "$env:GITHUB_WORKSPACE\python_runtime\windows\python.exe" -m pip install httpx pyyaml gmssl --quiet
+        shell: pwsh
+      - name: Bundle Python runtime into release
+        run: |
+          xcopy /E /I /Y python_runtime build\windows\x64\runner\Release\python_runtime
+          copy /Y assets\python\*.py build\windows\x64\runner\Release\python_runtime\
+        shell: cmd
+      - name: Package Windows bundle
+        run: |
+          Compress-Archive -Path "build\windows\x64\runner\Release\*" -DestinationPath "flutter_download_manager-windows-x86_64.zip"
+        shell: pwsh
       - name: Upload Windows bundle
         uses: actions/upload-artifact@v4
         with:
           name: windows-bundle
-          path: build/windows/x64/runner/Release/
+          path: flutter_download_manager-windows-x86_64.zip
 
   build-macos:
     name: Build macOS
@@ -123,6 +168,24 @@ jobs:
         run: flutter analyze --no-fatal-infos
       - name: Build macOS
         run: flutter build macos --release
+      - name: Download Python runtime (macOS ARM64)
+        run: |
+          mkdir -p python_runtime/macos
+          cd /tmp
+          curl -L --progress-bar -o python.tar.gz \
+            "https://github.com/indygreg/python-build-standalone/releases/download/${{ env.PYTHON_BUILD_DATE }}/cpython-${{ env.PYTHON_VERSION }}+${{ env.PYTHON_BUILD_DATE }}-aarch64-apple-darwin-install_only.tar.gz"
+          tar xzf python.tar.gz -C "$GITHUB_WORKSPACE/python_runtime/macos" --strip-components=1
+          rm python.tar.gz
+      - name: Install Python dependencies
+        run: |
+          "$GITHUB_WORKSPACE/python_runtime/macos/bin/python3" -m pip install httpx pyyaml gmssl --quiet
+      - name: Bundle Python runtime into app
+        run: |
+          APP_PATH="build/macos/Build/Products/Release/flutter_download_manager.app"
+          FRAMEWORKS_DIR="$APP_PATH/Contents/Frameworks"
+          mkdir -p "$FRAMEWORKS_DIR/python_runtime"
+          cp -r python_runtime/* "$FRAMEWORKS_DIR/python_runtime/"
+          cp assets/python/*.py "$FRAMEWORKS_DIR/python_runtime/"
       - name: Package macOS app
         run: |
           cd build/macos/Build/Products/Release
@@ -133,8 +196,6 @@ jobs:
           name: macos-app
           path: flutter_download_manager-mac.zip
 
-  # 仅在推送 tag 时触发发布（例: git tag v1.0.0 && git push origin v1.0.0）
-  # 需要到 GitHub 仓库 Settings → Actions → General → Workflow permissions → 勾选 "Read and write permissions"
   release:
     name: Create GitHub Release
     runs-on: ubuntu-latest
@@ -168,9 +229,9 @@ jobs:
           files: |
             artifacts/android-apk/app-release.apk
             artifacts/ios-ipa/flutter_download_manager.ipa
-            artifacts/linux-bundle/*
-            artifacts/windows-bundle/*
-            artifacts/macos-app/flutter_download_manager-mac.zip
+            artifacts/linux-bundle/*.tar.gz
+            artifacts/windows-bundle/*.zip
+            artifacts/macos-app/*.zip
           body: |
             ## 下载
 
@@ -178,9 +239,9 @@ jobs:
             |---|---|
             | **Android** | `app-release.apk` |
             | **iOS** | `flutter_download_manager.ipa` (未签名) |
-            | **Linux** | `linux-bundle/` |
-            | **Windows** | `windows-bundle/` |
-            | **macOS** | `flutter_download_manager-mac.zip` |
+            | **Linux** | `flutter_download_manager-linux-x86_64.tar.gz` (含内嵌Python) |
+            | **Windows** | `flutter_download_manager-windows-x86_64.zip` (含内嵌Python) |
+            | **macOS** | `flutter_download_manager-mac.zip` (含内嵌Python) |
 
             ## 安装说明
 
@@ -188,8 +249,12 @@ jobs:
 
             **iOS**: 需要签名后安装（用 Xcode 或 Sideloadly）
 
-            **Linux**: 解压后运行 `flutter_download_manager`
+            **Linux**: `tar xzf flutter_download_manager-linux-x86_64.tar.gz && cd bundle && ./flutter_download_manager`
 
             **Windows**: 解压后运行 `flutter_download_manager.exe`
 
             **macOS**: 解压后拖入 Applications 文件夹
+
+            ## 内嵌 Python
+
+            所有桌面版 (Linux/Windows/macOS) 均内置 Python 3.12 运行时，无需额外安装 Python。

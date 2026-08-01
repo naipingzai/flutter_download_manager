@@ -1,11 +1,10 @@
 import 'package:flutter/material.dart';
-import 'download_screen.dart';
-import 'tasks_screen.dart';
+import 'terminal_screen.dart';
 import 'settings_screen.dart';
 import 'cookie_manage_screen.dart';
 
-/// 平台内部导航框架 - 完全复刻原项目 PlatformShell
-/// 包含: 顶部 AppBar (返回箭头 + 标题) + 底部 NavigationBar (下载/任务/设置)
+/// 平台内部导航框架
+/// 主要界面为终端模拟器，设置页保留
 class PlatformShell extends StatefulWidget {
   final String platformName;
   final String platformId;
@@ -26,17 +25,14 @@ class PlatformShell extends StatefulWidget {
 
 class _PlatformShellState extends State<PlatformShell> {
   int _currentIndex = 0;
-  int _tasksScrollToTop = 0;
   bool _showingCookiePage = false;
 
   String get _currentTitle {
     if (_showingCookiePage) return '${widget.platformName} Cookie';
     switch (_currentIndex) {
       case 0:
-        return '${widget.platformName}下载';
+        return '${widget.platformName}终端';
       case 1:
-        return '下载任务';
-      case 2:
         return '设置';
       default:
         return widget.platformName;
@@ -61,7 +57,6 @@ class _PlatformShellState extends State<PlatformShell> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      // 顶部 AppBar - 对应原项目 TopAppBar + 返回箭头
       appBar: AppBar(
         title: Text(_currentTitle),
         leading: IconButton(
@@ -75,28 +70,18 @@ class _PlatformShellState extends State<PlatformShell> {
           },
         ),
       ),
-      // 底部 NavigationBar - 对应原项目的 NavigationBar 三个 tab
       bottomNavigationBar: _showBottomBar
           ? NavigationBar(
               selectedIndex: _currentIndex,
               onDestinationSelected: (index) {
-                if (index == _currentIndex && index == 1) {
-                  // 双击任务图标滚动到顶部
-                  setState(() => _tasksScrollToTop++);
-                } else {
-                  setState(() => _currentIndex = index);
-                }
+                setState(() => _currentIndex = index);
               },
-              destinations: [
-                const NavigationDestination(
-                  icon: Icon(Icons.download),
-                  label: '下载',
+              destinations: const [
+                NavigationDestination(
+                  icon: Icon(Icons.terminal),
+                  label: '终端',
                 ),
-                const NavigationDestination(
-                  icon: Icon(Icons.list),
-                  label: '任务',
-                ),
-                const NavigationDestination(
+                NavigationDestination(
                   icon: Icon(Icons.settings),
                   label: '设置',
                 ),
@@ -111,13 +96,9 @@ class _PlatformShellState extends State<PlatformShell> {
           : IndexedStack(
               index: _currentIndex,
               children: [
-                DownloadScreen(
+                TerminalScreen(
                   platformId: widget.platformId,
                   platformName: widget.platformName,
-                  sharedLink: widget.sharedLink,
-                ),
-                TasksScreen(
-                  platform: widget.platformId,
                 ),
                 SettingsScreen(
                   key: ValueKey(_settingsRefreshKey),

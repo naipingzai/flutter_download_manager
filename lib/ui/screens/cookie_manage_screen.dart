@@ -6,6 +6,7 @@ import '../../design_system/design_system.dart';
 import '../../services/storage/cookie_store.dart';
 import '../../services/download/douyin_bridge.dart';
 import '../../services/download/xhs_bridge.dart';
+import '../../services/download/kuaishou_bridge.dart';
 
 /// Cookie 管理页面
 class CookieManageScreen extends StatefulWidget {
@@ -44,27 +45,53 @@ class _CookieManageScreenState extends State<CookieManageScreen> {
   }
 
   void _applyToBridge(String cookie) {
-    if (widget.platform == 'xhs') {
-      XhsBridge.setCookie(cookie);
-    } else {
-      DouyinBridge.setCookie(cookie);
+    switch (widget.platform) {
+      case 'xhs':
+        XhsBridge.setCookie(cookie);
+        break;
+      case 'kuaishou':
+        KuaishouBridge.setCookie(cookie);
+        break;
+      default:
+        DouyinBridge.setCookie(cookie);
     }
   }
 
-  String get _loginUrl => widget.platform == 'xhs'
-      ? 'https://www.xiaohongshu.com/'
-      : 'https://www.douyin.com/';
+  String get _loginUrl {
+    switch (widget.platform) {
+      case 'xhs':
+        return 'https://www.xiaohongshu.com/';
+      case 'kuaishou':
+        return 'https://www.kuaishou.com/';
+      default:
+        return 'https://www.douyin.com/';
+    }
+  }
 
   /// 解析登录 URL 中的 Cookie 提取教程链接
   /// 不同平台的 Cookie 提取路径（DevTools → Network → 任意请求 → Cookie）
-  String get _cookieExtractionHint => widget.platform == 'xhs'
-      ? '小红书：F12 → Network → 任意请求 → 复制 Cookie'
-      : '抖音：F12 → Application → Cookies → 复制 sessionid 等';
+  String get _cookieExtractionHint {
+    switch (widget.platform) {
+      case 'xhs':
+        return '小红书：F12 → Network → 任意请求 → 复制 Cookie';
+      case 'kuaishou':
+        return '快手：F12 → Application → Cookies → 复制 did/kpn 等';
+      default:
+        return '抖音：F12 → Application → Cookies → 复制 sessionid 等';
+    }
+  }
 
   /// 关键 Cookie 字段（不同平台不同）
-  List<String> get _keyCookieFields => widget.platform == 'xhs'
-      ? ['web_session', 'a1', 'webId']
-      : ['sessionid', 'ttwid', 'uid_tt', 'sid_tt'];
+  List<String> get _keyCookieFields {
+    switch (widget.platform) {
+      case 'xhs':
+        return ['web_session', 'a1', 'webId'];
+      case 'kuaishou':
+        return ['did', 'kpn', 'kuaishou._security_token', 'userId'];
+      default:
+        return ['sessionid', 'ttwid', 'uid_tt', 'sid_tt'];
+    }
+  }
 
   Future<void> _openBrowser(String url) async {
     await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);

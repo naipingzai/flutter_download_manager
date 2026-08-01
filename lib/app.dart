@@ -54,6 +54,7 @@ class _RootNavigatorState extends State<_RootNavigator> {
         return HomeScreen(
           onSelectDouyin: () => _enterPlatform(PlatformMode.douyin, null),
           onSelectXhs: () => _enterPlatform(PlatformMode.xhs, null),
+          onSelectKuaishou: () => _enterPlatform(PlatformMode.kuaishou, null),
         );
       case PlatformMode.douyin:
         return PlatformShell(
@@ -69,9 +70,16 @@ class _RootNavigatorState extends State<_RootNavigator> {
           sharedLink: _sharedLink,
           onBackToHome: _exitPlatform,
         );
+      case PlatformMode.kuaishou:
+        return PlatformShell(
+          platformName: '快手',
+          platformId: 'kuaishou',
+          sharedLink: _sharedLink,
+          onBackToHome: _exitPlatform,
+        );
     }
   }
 }
 
 /// 平台模式
-enum PlatformMode { home, douyin, xhs }
+enum PlatformMode { home, douyin, xhs, kuaishou }

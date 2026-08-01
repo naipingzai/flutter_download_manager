@@ -1,5 +1,5 @@
 name: flutter_download_manager
-description: "抖音/小红书媒体下载器 - Flutter 纯 Dart 版本 (Android / iOS)"
+description: "抖音/小红书/快手媒体下载器 - Flutter 跨平台版本 (Android / iOS / Desktop)"
 publish_to: 'none'
 version: 1.0.0+1
 

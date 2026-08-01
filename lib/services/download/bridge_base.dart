@@ -53,9 +53,9 @@ abstract class BridgeBase {
       id: taskId,
       title: '🔍 解析链接中...',
       url: link,
-      type: type,
+      contentType: ContentType.fromString(type),
       status: TaskStatus.downloading,
-      source: source,
+      platform: PlatformType.fromId(source),
     );
     await _taskManager.addTask(task);
 

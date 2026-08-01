@@ -1,6 +1,12 @@
 # This file controls Flutter-level build steps. It should not be edited.
 cmake_minimum_required(VERSION 3.10)
 
+# Fix snap flutter missing ninja
+find_program(_SYSTEM_NINJA ninja)
+if(_SYSTEM_NINJA)
+  set(CMAKE_MAKE_PROGRAM "${_SYSTEM_NINJA}" CACHE FILEPATH "" FORCE)
+endif()
+
 set(EPHEMERAL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/ephemeral")
 
 # Configuration provided via flutter tool.
